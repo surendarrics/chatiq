@@ -1,0 +1,383 @@
+const express = require('express');
+const axios = require('axios');
+const jwt = require('jsonwebtoken');
+const { v4: uuidv4 } = require('uuid');
+const router = express.Router();
+
+const supabase = require('../utils/supabase');
+const instagramApi = require('../services/instagramApi');
+const logger = require('../utils/logger');
+
+const META_AUTH_URL = 'https://www.facebook.com/v19.0/dialog/oauth';
+const META_TOKEN_URL = 'https://graph.facebook.com/v19.0/oauth/access_token';
+const GRAPH_API_BASE = 'https://graph.facebook.com/v19.0';
+
+/**
+ * GET /api/auth/instagram
+ * Returns the Meta OAuth URL for Facebook Login
+ */
+router.get('/instagram', (req, res) => {
+  const state = uuidv4();
+  const params = new URLSearchParams({
+    client_id: process.env.META_APP_ID,
+    redirect_uri: process.env.INSTAGRAM_REDIRECT_URI,
+    scope: [
+      'instagram_basic',
+      'instagram_manage_comments',
+      'instagram_manage_messages',
+      'pages_show_list',
+      'pages_read_engagement',
+      'pages_manage_metadata',
+    ].join(','),
+    response_type: 'code',
+    state,
+  });
+
+  res.json({ authUrl: `${META_AUTH_URL}?${params.toString()}`, state });
+});
+
+/**
+ * GET /api/auth/instagram/callback
+ * Handle Meta OAuth callback — exchange code, get pages, save IG accounts
+ */
+router.get('/instagram/callback', async (req, res) => {
+  const { code, error } = req.query;
+
+  if (error) {
+    logger.warn('OAuth error:', error);
+    return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=oauth_denied`);
+  }
+
+  if (!code) {
+    return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=no_code`);
+  }
+
+  try {
+    // ─── Step 1: Exchange code for short-lived user access token ───
+    logger.info('Step 1: Exchanging code for short-lived token...');
+    const tokenResponse = await axios.get(META_TOKEN_URL, {
+      params: {
+        client_id: process.env.META_APP_ID,
+        client_secret: process.env.META_APP_SECRET,
+        redirect_uri: process.env.INSTAGRAM_REDIRECT_URI,
+        code,
+      },
+    });
+
+    const shortLivedToken = tokenResponse.data.access_token;
+    logger.info('Got short-lived token');
+
+    // ─── Step 2: Exchange for long-lived user access token ───
+    logger.info('Step 2: Exchanging for long-lived token...');
+    const longLivedResponse = await axios.get(`${GRAPH_API_BASE}/oauth/access_token`, {
+      params: {
+        grant_type: 'fb_exchange_token',
+        client_id: process.env.META_APP_ID,
+        client_secret: process.env.META_APP_SECRET,
+        fb_exchange_token: shortLivedToken,
+      },
+    });
+
+    const longLivedUserToken = longLivedResponse.data.access_token;
+    logger.info('Got long-lived user token');
+
+    // ─── Step 3: Get user's Facebook Pages (with IG business accounts) ───
+    logger.info('Step 3: Fetching Facebook Pages...');
+    const pagesResponse = await axios.get(`${GRAPH_API_BASE}/me/accounts`, {
+      params: {
+        fields: 'id,name,access_token,instagram_business_account',
+        access_token: longLivedUserToken,
+      },
+    });
+
+    const pages = pagesResponse.data.data;
+    logger.info(`Found ${pages?.length || 0} Facebook Page(s)`);
+
+    if (!pages || pages.length === 0) {
+      logger.warn('No Facebook Pages found');
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=no_pages`);
+    }
+
+    // Filter pages that have an Instagram Business Account linked
+    const pagesWithIG = pages.filter(p => p.instagram_business_account);
+    if (pagesWithIG.length === 0) {
+      logger.warn('No pages with Instagram Business Account');
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=no_pages`);
+    }
+
+    // ─── Step 4: Get Facebook user info ───
+    logger.info('Step 4: Fetching Facebook user info...');
+    const meResponse = await axios.get(`${GRAPH_API_BASE}/me`, {
+      params: { fields: 'id,name,email', access_token: longLivedUserToken },
+    });
+    const fbUser = meResponse.data;
+    logger.info(`Facebook user: ${fbUser.name} (${fbUser.id})`);
+
+    // ─── Step 5: Upsert user in database ───
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .upsert({
+        facebook_id: fbUser.id,
+        email: fbUser.email || `${fbUser.id}@facebook.com`,
+        name: fbUser.name,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'facebook_id' })
+      .select()
+      .single();
+
+    if (userError) {
+      logger.error('User upsert error:', userError);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=db_error`);
+    }
+
+    logger.info(`User upserted: ${user.id}`);
+
+    // ─── Step 6: Save each Instagram Business Account ───
+    for (const page of pagesWithIG) {
+      const igAccountId = page.instagram_business_account.id;
+      const pageAccessToken = page.access_token;
+
+      // Get Instagram profile details
+      logger.info(`Fetching IG profile for account ${igAccountId}...`);
+      const profile = await instagramApi.getInstagramProfile(igAccountId, pageAccessToken);
+
+      await supabase
+        .from('instagram_accounts')
+        .upsert({
+          user_id: user.id,
+          ig_account_id: igAccountId,
+          page_id: page.id,
+          page_name: page.name,
+          page_access_token: pageAccessToken,
+          username: profile.username,
+          profile_picture_url: profile.profile_picture_url,
+          followers_count: profile.followers_count,
+          access_token: longLivedUserToken,
+          token_expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'ig_account_id' })
+        .select();
+
+      logger.info(`Saved IG account: @${profile.username} (page: ${page.name})`);
+
+      // ─── Step 7: Subscribe page to webhooks ───
+      try {
+        await instagramApi.subscribePageToWebhook(page.id, pageAccessToken);
+        logger.info(`✅ Page ${page.id} (${page.name}) subscribed to webhooks`);
+      } catch (subErr) {
+        logger.warn(`⚠️ Webhook subscription failed for page ${page.id}:`, subErr.message);
+      }
+    }
+
+    // ─── Step 8: Generate JWT and redirect ───
+    const jwtToken = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    logger.info('Auth flow complete — redirecting to frontend');
+    res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${jwtToken}`);
+
+  } catch (err) {
+    logger.error('OAuth callback error:', err.response?.data || err.message);
+    res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=auth_failed`);
+  }
+});
+
+/**
+ * POST /api/auth/refresh
+ */
+router.post('/refresh', async (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ error: 'Token required' });
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
+    const newToken = jwt.sign({ userId: decoded.userId }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token: newToken });
+  } catch {
+    res.status(403).json({ error: 'Invalid token' });
+  }
+});
+
+/**
+ * GET /api/auth/me
+ */
+router.get('/me', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+
+    if (!token) {
+      return res.status(401).json({ error: 'No token' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, email, name')
+      .eq('id', decoded.userId)
+      .single();
+
+    if (error || !user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    res.json({ user });
+
+  } catch (err) {
+    console.error('GET /me error:', err.message);
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+/**
+ * POST /api/auth/logout
+ */
+router.post('/logout', (req, res) => {
+  res.json({ success: true });
+});
+
+/**
+ * POST /api/auth/instagram/connect
+ * Receives access token from FB SDK login (client-side), processes it server-side.
+ * This is the endpoint for Meta App Review — reviewers connect their own IG account.
+ */
+router.post('/instagram/connect', async (req, res) => {
+  const { accessToken } = req.body;
+
+  if (!accessToken) {
+    return res.status(400).json({ error: 'Missing accessToken' });
+  }
+
+  try {
+    logger.info('📥 /instagram/connect — received token from FB SDK');
+
+    // ─── Step 1: Exchange for long-lived token ───
+    const llRes = await axios.get(`${GRAPH_API_BASE}/oauth/access_token`, {
+      params: {
+        grant_type: 'fb_exchange_token',
+        client_id: process.env.META_APP_ID,
+        client_secret: process.env.META_APP_SECRET,
+        fb_exchange_token: accessToken,
+      },
+    });
+    const longLivedToken = llRes.data.access_token;
+    logger.info('✅ Got long-lived token');
+
+    // ─── Step 2: Get Facebook user info ───
+    const fbUser = await axios.get(`${GRAPH_API_BASE}/me`, {
+      params: { fields: 'id,name,email', access_token: longLivedToken },
+    });
+    logger.info(`✅ FB User: ${fbUser.data.name} (${fbUser.data.id})`);
+
+    // ─── Step 3: Upsert user in DB ───
+    const { data: user } = await supabase
+      .from('users')
+      .upsert({
+        facebook_id: fbUser.data.id,
+        name: fbUser.data.name,
+        email: fbUser.data.email || null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'facebook_id' })
+      .select()
+      .single();
+
+    logger.info(`✅ User upserted: ${user.id}`);
+
+    // ─── Step 4: Get Facebook Pages ───
+    const pagesRes = await axios.get(`${GRAPH_API_BASE}/me/accounts`, {
+      params: {
+        fields: 'id,name,access_token,instagram_business_account',
+        access_token: longLivedToken,
+      },
+    });
+
+    const pagesWithIG = (pagesRes.data.data || []).filter(
+      (p) => p.instagram_business_account
+    );
+
+    logger.info(`📄 Found ${pagesRes.data.data?.length || 0} pages, ${pagesWithIG.length} with IG`);
+
+    if (pagesWithIG.length === 0) {
+      return res.status(400).json({
+        error: 'No Instagram Business Account found linked to your Facebook Pages. Make sure your Instagram is a Professional (Business/Creator) account connected to a Facebook Page.',
+      });
+    }
+
+    // ─── Step 5: Save each Instagram Business Account ───
+    const connectedAccounts = [];
+
+    for (const page of pagesWithIG) {
+      const igAccountId = page.instagram_business_account.id;
+      const pageAccessToken = page.access_token;
+
+      // Get Instagram profile
+      let profile = {};
+      try {
+        const profileRes = await axios.get(`${GRAPH_API_BASE}/${igAccountId}`, {
+          params: {
+            fields: 'id,username,profile_picture_url,followers_count',
+            access_token: pageAccessToken,
+          },
+        });
+        profile = profileRes.data;
+      } catch (e) {
+        logger.warn(`⚠️ Failed to fetch IG profile for ${igAccountId}:`, e.message);
+      }
+
+      await supabase
+        .from('instagram_accounts')
+        .upsert({
+          user_id: user.id,
+          ig_account_id: igAccountId,
+          page_id: page.id,
+          page_name: page.name,
+          page_access_token: pageAccessToken,
+          username: profile.username || '',
+          profile_picture_url: profile.profile_picture_url || '',
+          followers_count: profile.followers_count || 0,
+          access_token: longLivedToken,
+          token_expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'ig_account_id' })
+        .select();
+
+      logger.info(`✅ Saved IG account: @${profile.username} (page: ${page.name})`);
+
+      // Subscribe page to webhooks
+      try {
+        await axios.post(
+          `${GRAPH_API_BASE}/${page.id}/subscribed_apps`,
+          null,
+          { params: { subscribed_fields: 'feed', access_token: pageAccessToken } }
+        );
+        logger.info(`✅ Page ${page.id} subscribed to webhooks`);
+      } catch (subErr) {
+        logger.warn(`⚠️ Webhook subscription failed for page ${page.id}:`, subErr.response?.data || subErr.message);
+      }
+
+      connectedAccounts.push({
+        igAccountId,
+        username: profile.username || igAccountId,
+        pageName: page.name,
+        pageId: page.id,
+      });
+    }
+
+    // ─── Step 6: Generate JWT ───
+    const jwtToken = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+    logger.info(`✅ /instagram/connect complete — ${connectedAccounts.length} account(s) connected`);
+
+    res.json({
+      success: true,
+      token: jwtToken,
+      accounts: connectedAccounts,
+    });
+
+  } catch (err) {
+    logger.error('❌ /instagram/connect error:', err.response?.data || err.message);
+    res.status(500).json({
+      error: err.response?.data?.error?.message || 'Failed to connect Instagram account.',
+    });
+  }
+});
+
+module.exports = router;
