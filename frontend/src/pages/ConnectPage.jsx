@@ -25,8 +25,13 @@ export default function ConnectPage() {
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [justConnectedAccount, setJustConnectedAccount] = useState(null);
 
-  // Load connected accounts
+  // Load connected accounts (only if user is already authenticated)
   useEffect(() => {
+    const token = localStorage.getItem('chatiq_token');
+    if (!token) {
+      setLoadingAccounts(false);
+      return;
+    }
     instagramApi.getAccounts()
       .then(res => setConnectedAccounts(res.data.accounts || []))
       .catch(() => {})

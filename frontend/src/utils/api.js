@@ -32,14 +32,20 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 globally — but NOT on /auth/me (prevents redirect loops)
+// Handle 401 globally — skip redirect for auth checks and account picker flow
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
       const requestUrl = err.config?.url || '';
-      const isAuthMeRequest = requestUrl.includes('/auth/me');
-      if (!isAuthMeRequest) {
+      // Don't redirect on these 401s:
+      // - /auth/me → AuthContext handles it
+      // - /instagram/accounts → ConnectPage loads before user has JWT
+      const isIgnored = requestUrl.includes('/auth/me')
+        || requestUrl.includes('/instagram/accounts');
+      // Also don't redirect if we're on the /connect page (account picker)
+      const isConnectPage = window.location.pathname === '/connect';
+      if (!isIgnored && !isConnectPage) {
         localStorage.removeItem('chatiq_token');
         window.location.href = '/';
       }
