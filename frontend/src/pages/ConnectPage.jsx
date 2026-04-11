@@ -17,6 +17,7 @@ export default function ConnectPage() {
 
   // Account picker (after OAuth)
   const [availableAccounts, setAvailableAccounts] = useState([]);
+  const [pagesWithoutIG, setPagesWithoutIG] = useState([]);
   const [sessionToken, setSessionToken] = useState(null);
   const [selected, setSelected] = useState(null);
   const [connecting, setConnecting] = useState(false);
@@ -24,6 +25,9 @@ export default function ConnectPage() {
   // Message access modal
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [justConnectedAccount, setJustConnectedAccount] = useState(null);
+
+  // Troubleshooting
+  const [showSetupGuide, setShowSetupGuide] = useState(false);
 
   // Load connected accounts (only if user is already authenticated)
   useEffect(() => {
@@ -46,15 +50,20 @@ export default function ConnectPage() {
     processed.current = true;
 
     try {
-      // Decode the JWT payload (without verification — backend will verify)
+      // Decode the JWT payload (without verification — backend will verify on select)
       const payload = JSON.parse(atob(session.split('.')[1]));
-      if (payload.accounts && payload.accounts.length > 0) {
-        setAvailableAccounts(payload.accounts);
-        setSessionToken(session);
-        // Auto-select if only one account
-        if (payload.accounts.length === 1) {
-          setSelected(payload.accounts[0]);
-        }
+      setSessionToken(session);
+      setAvailableAccounts(payload.accounts || []);
+      setPagesWithoutIG(payload.pagesWithoutIG || []);
+
+      // Auto-select if only one IG account
+      if (payload.accounts?.length === 1) {
+        setSelected(payload.accounts[0]);
+      }
+
+      // Show guide if no IG accounts found but pages exist
+      if ((!payload.accounts || payload.accounts.length === 0) && payload.pagesWithoutIG?.length > 0) {
+        setShowSetupGuide(true);
       }
     } catch (e) {
       console.error('Failed to parse session token:', e);
@@ -88,6 +97,7 @@ export default function ConnectPage() {
 
       // Clear picker state
       setAvailableAccounts([]);
+      setPagesWithoutIG([]);
       setSessionToken(null);
       setSelected(null);
 
@@ -103,7 +113,6 @@ export default function ConnectPage() {
       const msg = err.response?.data?.error || 'Failed to connect. Please try again.';
       toast.error(msg);
       if (err.response?.status === 401) {
-        // Session expired
         setAvailableAccounts([]);
         setSessionToken(null);
       }
@@ -123,7 +132,7 @@ export default function ConnectPage() {
     }
   };
 
-  const showPicker = availableAccounts.length > 0;
+  const showPicker = availableAccounts.length > 0 || pagesWithoutIG.length > 0;
 
   return (
     <>
@@ -166,7 +175,7 @@ export default function ConnectPage() {
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         padding: '60px 24px',
       }}>
-        <div style={{ width: '100%', maxWidth: 600 }}>
+        <div style={{ width: '100%', maxWidth: 640 }}>
           {/* Logo + back */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 48 }}>
             <Logo />
@@ -186,117 +195,206 @@ export default function ConnectPage() {
               : 'Link your Instagram Business account to start automating comments and DMs.'}
           </p>
 
-          {/* ═══ Account Picker (after OAuth) ═══ */}
+          {/* ═══════════════════════════════════════════════════════════════ */}
+          {/* ACCOUNT PICKER (after OAuth)                                   */}
+          {/* ═══════════════════════════════════════════════════════════════ */}
           {showPicker && (
             <div style={{ marginBottom: 32 }}>
-              <h3 style={{
-                fontSize: 13, fontWeight: 600, color: 'var(--text-muted)',
-                textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12,
-              }}>
-                Available Accounts
-              </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {availableAccounts.map(acc => {
-                  const isSelected = selected?.instagramId === acc.instagramId;
-                  return (
-                    <button
-                      key={acc.instagramId}
-                      onClick={() => setSelected(acc)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 16,
-                        padding: '16px 20px', borderRadius: 'var(--radius)',
-                        background: isSelected ? 'rgba(232,67,147,0.08)' : 'var(--bg-surface)',
-                        border: isSelected
-                          ? '2px solid var(--accent)'
-                          : '1px solid var(--border)',
-                        cursor: 'pointer', width: '100%', textAlign: 'left',
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      {/* Avatar */}
-                      <div style={{
-                        width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
-                        background: 'linear-gradient(135deg, var(--accent), var(--accent-2))',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: 20, overflow: 'hidden',
-                      }}>
-                        {acc.profilePictureUrl
-                          ? <img src={acc.profilePictureUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          : '📷'}
-                      </div>
 
-                      {/* Info */}
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600, marginBottom: 2, color: 'var(--text-primary)' }}>
-                          @{acc.username || 'unknown'}
-                        </div>
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                          Page: {acc.pageName} · {(acc.followersCount || 0).toLocaleString()} followers
-                        </div>
-                      </div>
+              {/* ── Available IG accounts (selectable) ── */}
+              {availableAccounts.length > 0 && (
+                <>
+                  <h3 style={sectionLabel}>Available Accounts</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+                    {availableAccounts.map(acc => {
+                      const isSelected = selected?.instagramId === acc.instagramId;
+                      return (
+                        <button
+                          key={acc.instagramId}
+                          onClick={() => setSelected(acc)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 16,
+                            padding: '16px 20px', borderRadius: 'var(--radius)',
+                            background: isSelected ? 'rgba(232,67,147,0.08)' : 'var(--bg-surface)',
+                            border: isSelected ? '2px solid var(--accent)' : '1px solid var(--border)',
+                            cursor: 'pointer', width: '100%', textAlign: 'left',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <AccountAvatar url={acc.profilePictureUrl} />
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600, marginBottom: 2, color: 'var(--text-primary)' }}>
+                              @{acc.username || 'unknown'}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                              Page: {acc.pageName} · {(acc.followersCount || 0).toLocaleString()} followers
+                            </div>
+                          </div>
+                          <RadioDot selected={isSelected} />
+                        </button>
+                      );
+                    })}
+                  </div>
 
-                      {/* Radio indicator */}
-                      <div style={{
-                        width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
-                        border: isSelected ? '2px solid var(--accent)' : '2px solid var(--border)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        transition: 'all 0.15s',
-                      }}>
-                        {isSelected && (
-                          <div style={{
-                            width: 12, height: 12, borderRadius: '50%',
-                            background: 'var(--accent)',
-                          }} />
-                        )}
+                  {/* Connect button */}
+                  <button
+                    onClick={handleConnectSelected}
+                    disabled={!selected || connecting}
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                      background: selected ? 'linear-gradient(135deg, #e1306c, #833ab4)' : 'var(--bg-elevated)',
+                      border: selected ? 'none' : '1px solid var(--border)',
+                      color: selected ? '#fff' : 'var(--text-muted)',
+                      padding: '14px 28px', borderRadius: 'var(--radius)',
+                      fontSize: 15, fontWeight: 600,
+                      cursor: !selected || connecting ? 'default' : 'pointer',
+                      opacity: !selected || connecting ? 0.6 : 1,
+                      fontFamily: 'var(--font-body)', transition: 'all 0.2s',
+                    }}
+                  >
+                    <InstagramIcon />
+                    {connecting ? 'Connecting…' : selected ? `Connect @${selected.username}` : 'Select an account'}
+                  </button>
+                </>
+              )}
+
+              {/* ── Pages WITHOUT Instagram linked (not selectable) ── */}
+              {pagesWithoutIG.length > 0 && (
+                <div style={{ marginTop: availableAccounts.length > 0 ? 28 : 0 }}>
+                  <h3 style={sectionLabel}>
+                    Pages Without Instagram
+                    <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>
+                      — needs setup
+                    </span>
+                  </h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {pagesWithoutIG.map(page => (
+                      <div
+                        key={page.pageId}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 16,
+                          padding: '16px 20px', borderRadius: 'var(--radius)',
+                          background: 'var(--bg-surface)', border: '1px dashed var(--border)',
+                          opacity: 0.65,
+                        }}
+                      >
+                        <div style={{
+                          width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
+                          background: 'var(--bg-elevated)', display: 'flex',
+                          alignItems: 'center', justifyContent: 'center', fontSize: 18,
+                        }}>📄</div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 600, marginBottom: 2, color: 'var(--text-primary)' }}>
+                            {page.pageName}
+                          </div>
+                          <div style={{ fontSize: 12, color: '#f59e0b' }}>
+                            ⚠ No Instagram Business account linked
+                          </div>
+                        </div>
                       </div>
-                    </button>
-                  );
-                })}
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── No IG accounts at all ── */}
+              {availableAccounts.length === 0 && pagesWithoutIG.length > 0 && (
+                <div style={{
+                  marginTop: 20, padding: '16px 20px', borderRadius: 'var(--radius)',
+                  background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)',
+                }}>
+                  <div style={{ fontWeight: 600, color: '#f59e0b', marginBottom: 8, fontSize: 15 }}>
+                    No Instagram Business accounts found
+                  </div>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 }}>
+                    Your Facebook Pages don't have Instagram Business accounts linked.
+                    Follow the setup guide below to connect your Instagram account to a Page.
+                  </p>
+                </div>
+              )}
+
+              {/* ── Troubleshooting / Setup Guide ── */}
+              <div style={{ marginTop: 24 }}>
+                <button
+                  onClick={() => setShowSetupGuide(!showSetupGuide)}
+                  style={{
+                    background: 'none', border: 'none', color: 'var(--accent)',
+                    cursor: 'pointer', fontSize: 13, fontWeight: 600, padding: 0,
+                    fontFamily: 'var(--font-body)',
+                  }}
+                >
+                  {showSetupGuide ? '▼' : '▶'} Don't see your Instagram account? Setup guide
+                </button>
+
+                {showSetupGuide && (
+                  <div style={{
+                    marginTop: 12, padding: 20, borderRadius: 'var(--radius)',
+                    background: 'var(--bg-surface)', border: '1px solid var(--border)',
+                  }}>
+                    <h4 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, color: 'var(--text-primary)' }}>
+                      How to connect your Instagram account
+                    </h4>
+
+                    {SETUP_STEPS.map((step, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 14, marginBottom: 16 }}>
+                        <div style={{
+                          width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+                          background: 'var(--accent)', color: '#fff',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 13, fontWeight: 700,
+                        }}>{i + 1}</div>
+                        <div>
+                          <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)', fontSize: 14 }}>
+                            {step.title}
+                          </div>
+                          <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                            {step.description}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    <div style={{
+                      marginTop: 16, padding: '12px 16px', borderRadius: 8,
+                      background: 'rgba(232,67,147,0.06)', border: '1px solid rgba(232,67,147,0.15)',
+                    }}>
+                      <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0, lineHeight: 1.6 }}>
+                        <strong style={{ color: 'var(--accent)' }}>After completing these steps:</strong> Click
+                        "Connect with Instagram" below to re-authorize. Your newly linked account will appear in the list.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Connect selected button */}
+              {/* Re-connect button (to re-start OAuth after fixing setup) */}
               <button
-                onClick={handleConnectSelected}
-                disabled={!selected || connecting}
+                onClick={handleStartOAuth}
                 style={{
-                  marginTop: 20, width: '100%',
+                  marginTop: 16, width: '100%',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-                  background: selected
-                    ? 'linear-gradient(135deg, #e1306c, #833ab4)'
-                    : 'var(--bg-elevated)',
-                  border: selected ? 'none' : '1px solid var(--border)',
-                  color: selected ? '#fff' : 'var(--text-muted)',
-                  padding: '14px 28px', borderRadius: 'var(--radius)',
-                  fontSize: 15, fontWeight: 600,
-                  cursor: !selected || connecting ? 'default' : 'pointer',
-                  opacity: !selected || connecting ? 0.6 : 1,
-                  fontFamily: 'var(--font-body)',
-                  transition: 'all 0.2s',
+                  background: 'var(--bg-surface)', border: '1px solid var(--border)',
+                  color: 'var(--text-secondary)', padding: '12px 20px',
+                  borderRadius: 'var(--radius)', fontSize: 13, fontWeight: 600,
+                  cursor: 'pointer', fontFamily: 'var(--font-body)',
+                  transition: 'all 0.15s',
                 }}
               >
-                <InstagramIcon />
-                {connecting
-                  ? 'Connecting…'
-                  : selected
-                    ? `Connect @${selected.username}`
-                    : 'Select an account'}
+                🔄 Re-authorize with Facebook (refresh account list)
               </button>
 
               <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 10, textAlign: 'center' }}>
-                This session expires in 5 minutes. If it expires, click "Connect with Instagram" again.
+                This session expires in 10 minutes.
               </p>
             </div>
           )}
 
-          {/* ═══ Connected accounts ═══ */}
+          {/* ═══════════════════════════════════════════════════════════════ */}
+          {/* CONNECTED ACCOUNTS (already saved in DB)                      */}
+          {/* ═══════════════════════════════════════════════════════════════ */}
           {!loadingAccounts && connectedAccounts.length > 0 && (
             <div style={{ marginBottom: 32 }}>
-              <h3 style={{
-                fontSize: 13, fontWeight: 600, color: 'var(--text-muted)',
-                textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12,
-              }}>
-                Connected Accounts
-              </h3>
+              <h3 style={sectionLabel}>Connected Accounts</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {connectedAccounts.map(acc => (
                   <div key={acc.id} style={{
@@ -304,16 +402,7 @@ export default function ConnectPage() {
                     padding: '16px 20px', borderRadius: 'var(--radius)',
                     background: 'var(--bg-surface)', border: '1px solid var(--border)',
                   }}>
-                    <div style={{
-                      width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
-                      background: 'linear-gradient(135deg, var(--accent), var(--accent-2))',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 20, overflow: 'hidden',
-                    }}>
-                      {acc.profile_picture_url
-                        ? <img src={acc.profile_picture_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        : '📷'}
-                    </div>
+                    <AccountAvatar url={acc.profile_picture_url} />
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 600, marginBottom: 2 }}>@{acc.username || acc.page_name}</div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
@@ -352,7 +441,9 @@ export default function ConnectPage() {
             </div>
           )}
 
-          {/* ═══ Connect new account (show when NOT in picker mode) ═══ */}
+          {/* ═══════════════════════════════════════════════════════════════ */}
+          {/* CONNECT NEW (when NOT in picker mode)                         */}
+          {/* ═══════════════════════════════════════════════════════════════ */}
           {!showPicker && (
             <div style={{
               background: 'var(--bg-surface)', border: '1px solid var(--border)',
@@ -362,7 +453,7 @@ export default function ConnectPage() {
                 {connectedAccounts.length > 0 ? 'Add another account' : 'Link your Instagram Business account'}
               </h3>
               <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 24, lineHeight: 1.6 }}>
-                You'll be redirected to Meta to authorize access. Then you'll choose which account to connect.
+                You'll be redirected to Meta to authorize access, then you'll choose which account to connect.
               </p>
               <button
                 onClick={handleStartOAuth}
@@ -402,6 +493,8 @@ export default function ConnectPage() {
   );
 }
 
+// ── Shared Components ────────────────────────────────────────────────────────
+
 function Logo() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -424,12 +517,70 @@ function InstagramIcon() {
   );
 }
 
+function AccountAvatar({ url }) {
+  return (
+    <div style={{
+      width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
+      background: 'linear-gradient(135deg, var(--accent), var(--accent-2))',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: 20, overflow: 'hidden',
+    }}>
+      {url ? <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '📷'}
+    </div>
+  );
+}
+
+function RadioDot({ selected }) {
+  return (
+    <div style={{
+      width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+      border: selected ? '2px solid var(--accent)' : '2px solid var(--border)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      transition: 'all 0.15s',
+    }}>
+      {selected && (
+        <div style={{ width: 12, height: 12, borderRadius: '50%', background: 'var(--accent)' }} />
+      )}
+    </div>
+  );
+}
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const SETUP_STEPS = [
+  {
+    title: 'Switch to a Business or Creator account',
+    description: 'Open Instagram → Settings → Account → Switch to Professional Account. Choose "Business" or "Creator".',
+  },
+  {
+    title: 'Create or use a Facebook Page',
+    description: 'Go to facebook.com/pages/create and create a Page for your business. If you already have one, skip this step.',
+  },
+  {
+    title: 'Link Instagram to your Facebook Page',
+    description: 'On your Facebook Page, go to Settings → Linked Accounts (or Professional dashboard → Linked accounts) → Connect Instagram. Log in and authorize.',
+  },
+  {
+    title: 'Grant permissions during OAuth',
+    description: 'When you click "Connect with Instagram" here, Facebook will ask which Pages to grant access to. Make sure you check ALL the Pages you want ChatIQ to see — including the one you just linked.',
+  },
+  {
+    title: 'Re-authorize in ChatIQ',
+    description: 'Click the "Re-authorize with Facebook" button below to refresh and see your newly linked account.',
+  },
+];
+
 const REQUIREMENTS = [
   'Instagram Business or Creator account (not personal)',
   'Facebook Page connected to your Instagram account',
   'Admin access to the Facebook Page',
-  'App must be approved for instagram_manage_comments and instagram_manage_messages permissions in production',
+  'Grant access to all relevant Pages during the Facebook login',
 ];
+
+const sectionLabel = {
+  fontSize: 13, fontWeight: 600, color: 'var(--text-muted)',
+  textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12,
+};
 
 const ghostBtn = {
   background: 'var(--bg-elevated)', border: '1px solid var(--border)',

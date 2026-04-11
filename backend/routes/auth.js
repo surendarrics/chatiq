@@ -134,53 +134,60 @@ router.get('/instagram/callback', async (req, res) => {
     const pages = pagesResponse.data.data || [];
     logger.info(`Found ${pages.length} Facebook Page(s)`);
 
-    // Filter pages that have an Instagram Business Account
-    const pagesWithIG = pages.filter(p => p.instagram_business_account);
-    if (pagesWithIG.length === 0) {
-      logger.warn('No pages with Instagram Business Account');
+    if (pages.length === 0) {
+      logger.warn('No Facebook Pages found');
       return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=no_pages`);
     }
 
-    // ─── Step 5: Fetch IG profile for each page ───
+    // ─── Step 5: Fetch IG profile for EACH page ───
+    // Include ALL pages so the frontend can show which ones have IG linked and which don't
     logger.info('Step 5: Fetching Instagram profiles...');
     const availableAccounts = [];
+    const pagesWithoutIG = [];
 
-    for (const page of pagesWithIG) {
-      const igId = page.instagram_business_account.id;
-      let profile = {};
-      try {
-        const profileRes = await axios.get(`${GRAPH_API_BASE}/${igId}`, {
-          params: {
-            fields: 'id,username,profile_picture_url,followers_count',
-            access_token: page.access_token,
-          },
+    for (const page of pages) {
+      if (page.instagram_business_account) {
+        const igId = page.instagram_business_account.id;
+        let profile = {};
+        try {
+          const profileRes = await axios.get(`${GRAPH_API_BASE}/${igId}`, {
+            params: {
+              fields: 'id,username,profile_picture_url,followers_count',
+              access_token: page.access_token,
+            },
+          });
+          profile = profileRes.data;
+        } catch (e) {
+          logger.warn(`⚠️ Failed to fetch IG profile for ${igId}:`, e.message);
+        }
+
+        availableAccounts.push({
+          pageId: page.id,
+          pageName: page.name,
+          instagramId: igId,
+          username: profile.username || '',
+          profilePictureUrl: profile.profile_picture_url || '',
+          followersCount: profile.followers_count || 0,
         });
-        profile = profileRes.data;
-      } catch (e) {
-        logger.warn(`⚠️ Failed to fetch IG profile for ${igId}:`, e.message);
+      } else {
+        // Page without Instagram linked — include so user can see it's missing
+        pagesWithoutIG.push({
+          pageId: page.id,
+          pageName: page.name,
+        });
       }
-
-      availableAccounts.push({
-        pageId: page.id,
-        pageName: page.name,
-        instagramId: igId,
-        username: profile.username || '',
-        profilePictureUrl: profile.profile_picture_url || '',
-        followersCount: profile.followers_count || 0,
-      });
     }
 
-    logger.info(`Found ${availableAccounts.length} Instagram account(s) available`);
+    logger.info(`Found ${availableAccounts.length} IG account(s), ${pagesWithoutIG.length} page(s) without IG`);
 
     // ─── Step 6: Create a short-lived session JWT with all the data ───
-    // This session JWT is NOT the user's auth token — it's a temporary
-    // token that holds the OAuth data so the frontend can show a picker.
     const sessionToken = jwt.sign({
       type: 'oauth_session',
       fbUser: { id: fbUser.id, name: fbUser.name, email: fbUser.email },
       longLivedUserToken,
       accounts: availableAccounts,
-    }, process.env.JWT_SECRET, { expiresIn: '5m' }); // 5 minutes to pick
+      pagesWithoutIG,
+    }, process.env.JWT_SECRET, { expiresIn: '10m' }); // 10 minutes to pick
 
     // ─── Step 7: Redirect to frontend account picker ───
     logger.info('Redirecting to frontend account picker');
