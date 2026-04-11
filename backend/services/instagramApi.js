@@ -83,13 +83,34 @@ async function getInstagramPosts(account, limit = 20) {
 
     const response = await axios.get(url, {
       params: {
-        fields: 'id,caption,media_type,media_url,thumbnail_url,timestamp,like_count,comments_count,permalink',
+        fields: 'id,caption,media_type,media_product_type,media_url,thumbnail_url,timestamp,like_count,comments_count,permalink',
         limit,
         access_token: accessToken,
       },
     });
 
-    logger.info(`Fetched ${response.data?.data?.length || 0} posts for account ${igId}`);
+    // Post-process: for VIDEO/REEL posts missing thumbnail_url, try fetching individually
+    const posts = response.data?.data || [];
+    for (const post of posts) {
+      if ((post.media_type === 'VIDEO') && !post.thumbnail_url) {
+        try {
+          const detailRes = await axios.get(`${apiBase}/${post.id}`, {
+            params: {
+              fields: 'thumbnail_url',
+              access_token: accessToken,
+            },
+          });
+          if (detailRes.data?.thumbnail_url) {
+            post.thumbnail_url = detailRes.data.thumbnail_url;
+          }
+        } catch (e) {
+          // Silent fail — just won't have a thumbnail
+          logger.warn(`Could not fetch thumbnail for post ${post.id}: ${e.message}`);
+        }
+      }
+    }
+
+    logger.info(`Fetched ${posts.length} posts for account ${igId}`);
     return response.data;
   } catch (error) {
     logger.error('Get posts error:', error.response?.data || error.message);

@@ -6,6 +6,7 @@ const router = express.Router();
 const supabase = require('../utils/supabase');
 
 const GRAPH_API = 'https://graph.facebook.com/v19.0';
+const IG_GRAPH_API = 'https://graph.instagram.com/v21.0';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // GET /webhook/instagram — Meta verification handshake
@@ -26,6 +27,9 @@ router.get('/instagram', (req, res) => {
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // POST /webhook/instagram — Receive real-time events from Meta
+// Handles BOTH:
+//  - Instagram Webhooks (object: "instagram", field: "comments")
+//  - Facebook Page Webhooks (object: "page", field: "feed" with item: "comment")
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 router.post('/instagram', async (req, res) => {
   // ALWAYS return 200 immediately — Meta will retry if you don't
@@ -42,11 +46,11 @@ router.post('/instagram', async (req, res) => {
 
   console.log('\n═══════════════════════════════════════════');
   console.log('📥 WEBHOOK RECEIVED');
+  console.log(`   Object type: ${body.object}`);
   console.log(JSON.stringify(body, null, 2));
   console.log('═══════════════════════════════════════════\n');
 
   try {
-    // Write raw webhook to a file locally so we can inspect it!
     const fs = require('fs');
     fs.appendFileSync('webhook_inspect.log', JSON.stringify({time: new Date().toISOString(), body}) + '\n');
   } catch(e){}
@@ -58,16 +62,37 @@ router.post('/instagram', async (req, res) => {
   }
 
   for (const entry of body.entry || []) {
-    const entryId = entry.id; // This is the Page ID or IG Account ID
+    const entryId = entry.id; // IG User ID or Page ID
 
+    // ─── Handle Instagram Webhooks (object: "instagram") ─────
     for (const change of entry.changes || []) {
-      console.log(`📌 Change field: ${change.field}`);
+      console.log(`📌 Change field: ${change.field}, object: ${body.object}`);
 
       if (change.field === 'comments') {
-        handleComment(entryId, change.value).catch(err =>
+        // Instagram webhook comments format
+        handleComment(entryId, change.value, 'instagram').catch(err =>
           console.error('❌ handleComment error:', err.message)
         );
       }
+
+      if (change.field === 'feed' && change.value?.item === 'comment') {
+        // Facebook Page webhook comment format
+        const feedValue = {
+          id: change.value.comment_id,
+          text: change.value.message || '',
+          from: { id: change.value.sender_id || change.value.from?.id },
+          media: { id: change.value.post_id },
+        };
+        handleComment(entryId, feedValue, 'page').catch(err =>
+          console.error('❌ handleComment (feed) error:', err.message)
+        );
+      }
+    }
+
+    // ─── Handle Messaging (for both Instagram and Page) ─────
+    for (const msg of entry.messaging || []) {
+      console.log('📩 Messaging event received:', JSON.stringify(msg).substring(0, 200));
+      // Future: handle incoming DMs here
     }
   }
 });
@@ -75,13 +100,13 @@ router.post('/instagram', async (req, res) => {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // CORE: Handle incoming comment
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-async function handleComment(entryId, value) {
+async function handleComment(entryId, value, source) {
   const commentId = value.id;
   const commentText = (value.text || '').trim();
   const commenterId = value.from?.id;
   const postId = value.media?.id;
 
-  console.log(`\n💬 Comment received:`);
+  console.log(`\n💬 Comment received (source: ${source}):`);
   console.log(`   Text: "${commentText}"`);
   console.log(`   Comment ID: ${commentId}`);
   console.log(`   Commenter ID: ${commenterId}`);
@@ -93,7 +118,8 @@ async function handleComment(entryId, value) {
     return;
   }
 
-  // ── Find the Instagram account in DB (try ig_account_id first, then page_id) ──
+  // ── Find the Instagram account in DB ──
+  // Try ig_account_id first, then page_id
   let account = null;
 
   const { data: byIg } = await supabase
@@ -118,18 +144,15 @@ async function handleComment(entryId, value) {
     return;
   }
 
-  console.log(`✅ Matched account: ${account.ig_account_id}`);
+  console.log(`✅ Matched account: @${account.username} (${account.ig_account_id})`);
 
   // Pick the right token and API base depending on login type
   const isIgLogin = !account.page_id || account.page_id === '';
   const TOKEN = isIgLogin ? account.access_token : account.page_access_token;
-  const API_BASE = isIgLogin ? 'https://graph.instagram.com/v21.0' : GRAPH_API;
+  const API_BASE = isIgLogin ? IG_GRAPH_API : GRAPH_API;
 
-  // ── Skip if the commenter is the page itself (don't reply to yourself) ──
-  // if (commenterId === account.ig_account_id) {
-  //  console.log('⏭️ Skipping: commenter is the page owner');
-  //  return;
-  // }
+  console.log(`   Token type: ${isIgLogin ? 'Instagram Login' : 'Facebook Page'}`);
+  console.log(`   API Base: ${API_BASE}`);
 
   // ── Check if post has an active automation ──
   const { data: automations } = await supabase
@@ -142,6 +165,8 @@ async function handleComment(entryId, value) {
     console.log(`⏭️ No active automations for post: ${postId}`);
     return;
   }
+
+  console.log(`📋 Found ${automations.length} active automation(s) for post ${postId}`);
 
   for (const auto of automations) {
     // ── Keyword matching ──
@@ -159,6 +184,24 @@ async function handleComment(entryId, value) {
 
     console.log(`🎯 KEYWORD MATCH! Automation: ${auto.id}`);
 
+    // ── Dedup check ──
+    const { data: existing } = await supabase
+      .from('automation_logs')
+      .select('id')
+      .eq('comment_id', commentId)
+      .eq('automation_id', auto.id)
+      .single();
+
+    if (existing) {
+      console.log(`⏭️ Already processed comment ${commentId} for automation ${auto.id}`);
+      continue;
+    }
+
+    let replySent = false;
+    let dmSent = false;
+    let replyError = null;
+    let dmError = null;
+
     // ── Reply to comment ──
     if (auto.reply_text) {
       try {
@@ -168,7 +211,9 @@ async function handleComment(entryId, value) {
           { params: { message: auto.reply_text, access_token: TOKEN } }
         );
         console.log(`✅ Comment reply sent! Response:`, replyRes.data);
+        replySent = true;
       } catch (err) {
+        replyError = err.response?.data?.error?.message || err.message;
         console.error(`❌ Comment reply FAILED:`, err.response?.data || err.message);
       }
     }
@@ -178,6 +223,7 @@ async function handleComment(entryId, value) {
       // Guard: check if user confirmed message access is enabled
       if (!account.message_access_enabled) {
         console.warn(`⚠️ Skipping DM — message access not enabled for @${account.username}. User must enable "Allow access to messages" in Instagram settings.`);
+        dmError = 'Message access not enabled';
       } else {
         try {
           // Small delay to avoid rate limit
@@ -193,7 +239,9 @@ async function handleComment(entryId, value) {
             { params: { access_token: TOKEN, platform: 'instagram' } }
           );
           console.log(`✅ DM sent! Response:`, dmRes.data);
+          dmSent = true;
         } catch (err) {
+          dmError = err.response?.data?.error?.message || err.message;
           console.error(`❌ DM FAILED:`, err.response?.data || err.message);
         }
       }
@@ -206,18 +254,31 @@ async function handleComment(entryId, value) {
         comment_id: commentId,
         commenter_ig_id: commenterId,
         comment_text: commentText,
-        status: 'completed',
-        reply_sent: !!auto.reply_text,
-        dm_sent: !!auto.dm_text,
+        status: (replySent || dmSent) ? 'completed' : 'failed',
+        reply_sent: replySent,
+        dm_sent: dmSent,
+        reply_error: replyError,
+        dm_error: dmError,
         processed_at: new Date().toISOString(),
       });
 
       await supabase.rpc('increment_trigger_count', { automation_id: auto.id });
-      console.log(`📊 Logged to DB`);
+      console.log(`📊 Logged to DB — reply: ${replySent}, dm: ${dmSent}`);
     } catch (dbErr) {
       console.error('⚠️ DB log failed:', dbErr.message);
     }
   }
 }
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// GET /webhook/test — Debug endpoint to verify webhook is reachable
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+router.get('/test', (req, res) => {
+  res.json({
+    status: 'Webhook endpoint is reachable',
+    timestamp: new Date().toISOString(),
+    verify_token_set: !!process.env.META_WEBHOOK_VERIFY_TOKEN,
+  });
+});
 
 module.exports = router;

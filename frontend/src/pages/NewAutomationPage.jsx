@@ -289,15 +289,23 @@ function PostStep({ posts, selected, onSelect, loading }) {
             cursor: 'pointer', background: 'var(--bg-elevated)', transition: 'border-color 0.15s',
           }}
         >
-          {(post.media_url || post.thumbnail_url) ? (
+          {(() => {
+            const isVideo = post.media_type === 'VIDEO';
+            const imgSrc = isVideo
+              ? (post.thumbnail_url || post.media_url)
+              : (post.media_url || post.thumbnail_url);
+            return imgSrc ? (
             <img
-              src={post.media_url || post.thumbnail_url}
+              src={imgSrc}
               alt={post.caption || ''}
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling && (e.target.nextSibling.style.display = 'flex'); }}
             />
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 32 }}>📷</div>
-          )}
+            ) : null;
+          })()}
+          <div style={{ display: 'none', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 32 }}>
+            {post.media_type === 'VIDEO' ? '🎬' : '📷'}
+          </div>
           {selected === post.id && (
             <div style={{
               position: 'absolute', inset: 0,
@@ -305,6 +313,24 @@ function PostStep({ posts, selected, onSelect, loading }) {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 28, color: '#fff',
             }}>✓</div>
+          )}
+          {post.media_type === 'VIDEO' && (
+            <div style={{
+              position: 'absolute', top: 4, left: 4,
+              background: 'rgba(0,0,0,0.6)', borderRadius: 6,
+              fontSize: 10, padding: '2px 6px', color: '#fff',
+            }}>
+              {post.media_product_type === 'REELS' ? '🎬 Reel' : '📹 Video'}
+            </div>
+          )}
+          {post.media_type === 'CAROUSEL_ALBUM' && (
+            <div style={{
+              position: 'absolute', top: 4, left: 4,
+              background: 'rgba(0,0,0,0.6)', borderRadius: 6,
+              fontSize: 10, padding: '2px 6px', color: '#fff',
+            }}>
+              📸 Carousel
+            </div>
           )}
           {post.comments_count > 0 && (
             <div style={{
