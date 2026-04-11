@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import api, { instagramApi } from '../utils/api';
+import api, { authApi, instagramApi } from '../utils/api';
 import toast from 'react-hot-toast';
 import MessageAccessModal from '../components/MessageAccessModal';
 
@@ -33,7 +33,7 @@ export default function LandingPage() {
           console.log('✅ FB Login success, token:', accessToken.substring(0, 20) + '...');
 
           // Send token to backend to complete the connection
-          api.post('/auth/instagram/connect', { accessToken })
+          authApi.connectInstagram(accessToken)
             .then((res) => {
               console.log('✅ Backend connect response:', res.data);
               setConnectionStatus({

@@ -31,7 +31,7 @@ export default function ConnectPage() {
     window.FB.login(
       (response) => {
         if (response.authResponse) {
-          api.post('/auth/instagram/connect', { accessToken: response.authResponse.accessToken })
+          authApi.connectInstagram(response.authResponse.accessToken)
             .then((res) => {
               if (res.data.token) localStorage.setItem('chatiq_token', res.data.token);
               toast.success('Instagram connected!');
