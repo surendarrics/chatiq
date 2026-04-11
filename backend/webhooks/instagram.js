@@ -98,7 +98,7 @@ async function handleComment(entryId, value) {
 
   const { data: byIg } = await supabase
     .from('instagram_accounts')
-    .select('id, ig_account_id, page_access_token, message_access_enabled, username')
+    .select('id, ig_account_id, access_token, page_access_token, page_id, message_access_enabled, username')
     .eq('ig_account_id', entryId)
     .single();
 
@@ -107,7 +107,7 @@ async function handleComment(entryId, value) {
   } else {
     const { data: byPage } = await supabase
       .from('instagram_accounts')
-      .select('id, ig_account_id, page_access_token, message_access_enabled, username')
+      .select('id, ig_account_id, access_token, page_access_token, page_id, message_access_enabled, username')
       .eq('page_id', entryId)
       .single();
     account = byPage;
@@ -120,7 +120,10 @@ async function handleComment(entryId, value) {
 
   console.log(`✅ Matched account: ${account.ig_account_id}`);
 
-  const PAGE_TOKEN = account.page_access_token;
+  // Pick the right token and API base depending on login type
+  const isIgLogin = !account.page_id || account.page_id === '';
+  const TOKEN = isIgLogin ? account.access_token : account.page_access_token;
+  const API_BASE = isIgLogin ? 'https://graph.instagram.com/v21.0' : GRAPH_API;
 
   // ── Skip if the commenter is the page itself (don't reply to yourself) ──
   // if (commenterId === account.ig_account_id) {
@@ -160,9 +163,9 @@ async function handleComment(entryId, value) {
     if (auto.reply_text) {
       try {
         const replyRes = await axios.post(
-          `${GRAPH_API}/${commentId}/replies`,
+          `${API_BASE}/${commentId}/replies`,
           null,
-          { params: { message: auto.reply_text, access_token: PAGE_TOKEN } }
+          { params: { message: auto.reply_text, access_token: TOKEN } }
         );
         console.log(`✅ Comment reply sent! Response:`, replyRes.data);
       } catch (err) {
@@ -180,14 +183,14 @@ async function handleComment(entryId, value) {
           // Small delay to avoid rate limit
           await new Promise(r => setTimeout(r, 1000));
 
-          // Use /me/messages with platform=instagram for Private Replies
+          // Private Reply to comment
           const dmRes = await axios.post(
-            `${GRAPH_API}/me/messages`,
+            `${API_BASE}/me/messages`,
             {
               recipient: { comment_id: commentId },
               message: { text: auto.dm_text },
             },
-            { params: { access_token: PAGE_TOKEN, platform: 'instagram' } }
+            { params: { access_token: TOKEN, platform: 'instagram' } }
           );
           console.log(`✅ DM sent! Response:`, dmRes.data);
         } catch (err) {

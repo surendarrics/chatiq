@@ -1,5 +1,6 @@
 const supabase = require('../utils/supabase');
 const instagramApi = require('./instagramApi');
+const { getToken } = require('./instagramApi');
 const logger = require('../utils/logger');
 
 /**
@@ -29,7 +30,8 @@ async function handleIncomingComment(commentData) {
         instagram_accounts (
           access_token,
           ig_account_id,
-          page_access_token
+          page_access_token,
+          page_id
         )
       `)
       .eq('post_id', postId)
@@ -107,7 +109,8 @@ async function processAutomation(automation, commentData) {
     // 5. Send comment reply
     if (automation.reply_text) {
       try {
-        await sendCommentReply(commentId, automation.reply_text, account.page_access_token);
+        const token = getToken(account);
+        await instagramApi.sendCommentReply(commentId, automation.reply_text, token, account);
         replySuccess = true;
         logger.info(`✅ Comment reply sent for automation ${automation.id}`);
       } catch (err) {
@@ -121,11 +124,13 @@ async function processAutomation(automation, commentData) {
       // Small delay to avoid rate limit issues
       await sleep(1000);
       try {
+        const token = getToken(account);
         const dmResult = await instagramApi.sendInstagramDM(
           account.ig_account_id,
           commenterIgId,
           automation.dm_text,
-          account.page_access_token
+          token,
+          account
         );
         dmSuccess = !dmResult.error;
         if (dmResult.error) dmError = dmResult.error;
@@ -163,12 +168,7 @@ async function processAutomation(automation, commentData) {
   }
 }
 
-/**
- * Wrapper to send comment reply with token validation
- */
-async function sendCommentReply(commentId, replyText, accessToken) {
-  return instagramApi.sendCommentReply(commentId, replyText, accessToken);
-}
+// Removed wrapper — now called directly with account object for API base detection
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));

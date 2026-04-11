@@ -13,7 +13,7 @@ router.get('/accounts', authenticateToken, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('instagram_accounts')
-      .select('id, ig_account_id, username, profile_picture_url, followers_count, page_name, message_access_enabled, created_at, updated_at')
+      .select('id, ig_account_id, username, profile_picture_url, followers_count, page_name, page_id, message_access_enabled, created_at, updated_at')
       .eq('user_id', req.user.id)
       .order('created_at', { ascending: false });
 
@@ -47,14 +47,15 @@ router.delete('/accounts/:id', authenticateToken, async (req, res) => {
 
 /**
  * GET /api/instagram/accounts/:accountId/posts
- * Get posts for a specific Instagram account
+ * Get posts/reels for a specific Instagram account
+ * Works with both Instagram Login and Facebook Login tokens
  */
 router.get('/accounts/:accountId/posts', authenticateToken, async (req, res) => {
   try {
-    // Verify account belongs to user
+    // Fetch full account record (need access_token, page_id, etc.)
     const { data: account, error: accError } = await supabase
       .from('instagram_accounts')
-      .select('ig_account_id, page_access_token')
+      .select('ig_account_id, access_token, page_access_token, page_id')
       .eq('id', req.params.accountId)
       .eq('user_id', req.user.id)
       .single();
@@ -64,16 +65,12 @@ router.get('/accounts/:accountId/posts', authenticateToken, async (req, res) => 
     }
 
     const limit = Math.min(parseInt(req.query.limit) || 20, 50);
-    const posts = await instagramApi.getInstagramPosts(
-      account.ig_account_id,
-      account.page_access_token,
-      limit
-    );
+    const posts = await instagramApi.getInstagramPosts(account, limit);
 
     res.json(posts);
   } catch (err) {
-    logger.error('Get posts error:', err);
-    res.status(500).json({ error: 'Failed to fetch posts' });
+    logger.error('Get posts error:', err.message);
+    res.status(500).json({ error: err.message || 'Failed to fetch posts' });
   }
 });
 
@@ -85,14 +82,15 @@ router.get('/accounts/:accountId/validate', authenticateToken, async (req, res) 
   try {
     const { data: account } = await supabase
       .from('instagram_accounts')
-      .select('page_access_token')
+      .select('access_token, page_access_token, page_id')
       .eq('id', req.params.accountId)
       .eq('user_id', req.user.id)
       .single();
 
     if (!account) return res.status(404).json({ error: 'Account not found' });
 
-    const result = await instagramApi.validateToken(account.page_access_token);
+    const token = instagramApi.getToken(account);
+    const result = await instagramApi.validateToken(token);
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: 'Validation failed' });
@@ -101,7 +99,7 @@ router.get('/accounts/:accountId/validate', authenticateToken, async (req, res) 
 
 /**
  * POST /api/instagram/accounts/:accountId/subscribe
- * Manually subscribe a page to webhooks (for debugging / re-subscribing)
+ * Subscribe to webhooks (for Facebook Login accounts only)
  */
 router.post('/accounts/:accountId/subscribe', authenticateToken, async (req, res) => {
   try {
@@ -114,22 +112,11 @@ router.post('/accounts/:accountId/subscribe', authenticateToken, async (req, res
 
     if (!account) return res.status(404).json({ error: 'Account not found' });
 
-    const axios = require('axios');
-    const response = await axios.post(
-      `https://graph.facebook.com/v19.0/${account.page_id}/subscribed_apps`,
-      null,
-      {
-        params: {
-          subscribed_fields: 'feed,comments,messages,message_reactions',
-          access_token: account.page_access_token,
-        },
-      }
-    );
-
-    console.log(`✅ Manually subscribed page ${account.page_id} (${account.page_name}):`, response.data);
-    res.json({ success: true, data: response.data });
+    const result = await instagramApi.subscribePageToWebhook(account.page_id, account.page_access_token);
+    logger.info(`✅ Webhook subscription for ${account.page_name}:`, result);
+    res.json({ success: true, data: result });
   } catch (err) {
-    console.error('Subscribe error:', err.response?.data || err.message);
+    logger.error('Subscribe error:', err.response?.data || err.message);
     res.status(500).json({ error: 'Subscription failed', details: err.response?.data });
   }
 });
@@ -153,10 +140,10 @@ router.patch('/accounts/:accountId/message-access', authenticateToken, async (re
     if (error) throw error;
     if (!data) return res.status(404).json({ error: 'Account not found' });
 
-    console.log(`📬 Message access ${enabled ? 'ENABLED' : 'DISABLED'} for account ${data.username}`);
+    logger.info(`📬 Message access ${enabled ? 'ENABLED' : 'DISABLED'} for account ${data.username}`);
     res.json({ success: true, message_access_enabled: data.message_access_enabled });
   } catch (err) {
-    console.error('Message access update error:', err);
+    logger.error('Message access update error:', err);
     res.status(500).json({ error: 'Failed to update message access status' });
   }
 });

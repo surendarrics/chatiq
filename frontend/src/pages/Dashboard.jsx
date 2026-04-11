@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { dashboardApi, instagramApi } from '../utils/api';
 import toast from 'react-hot-toast';
 import { MessageAccessBanner } from '../components/MessageAccessModal';
+import MessageAccessModal from '../components/MessageAccessModal';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -11,12 +12,16 @@ export default function Dashboard() {
   const [activity, setActivity] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showMessageAccess, setShowMessageAccess] = useState(false);
+  const [newAccount, setNewAccount] = useState(null);
 
-  // Show success toast after OAuth redirect
+  // Show success toast + message access modal after OAuth redirect
   useEffect(() => {
     if (sessionStorage.getItem('chatiq_auth_success')) {
       sessionStorage.removeItem('chatiq_auth_success');
       toast.success('Instagram connected successfully! 🎉');
+      // Will trigger message access modal after accounts load
+      sessionStorage.setItem('chatiq_show_message_access', '1');
     }
   }, []);
 
@@ -30,7 +35,18 @@ export default function Dashboard() {
         ]);
         setStats(statsRes.data);
         setActivity(actRes.data.activity || []);
-        setAccounts(accRes.data.accounts || []);
+        const loadedAccounts = accRes.data.accounts || [];
+        setAccounts(loadedAccounts);
+
+        // Auto-show message access modal for newly connected account
+        if (sessionStorage.getItem('chatiq_show_message_access')) {
+          sessionStorage.removeItem('chatiq_show_message_access');
+          const needsAccess = loadedAccounts.find(a => !a.message_access_enabled);
+          if (needsAccess) {
+            setNewAccount(needsAccess);
+            setShowMessageAccess(true);
+          }
+        }
       } catch {
         toast.error('Failed to load dashboard');
       } finally {
@@ -52,6 +68,31 @@ export default function Dashboard() {
   const hasAccounts = accounts.length > 0;
 
   return (
+    <>
+      {/* Message access modal (shown after fresh connection) */}
+      {showMessageAccess && newAccount && (
+        <MessageAccessModal
+          account={{
+            id: newAccount.ig_account_id || newAccount.id,
+            username: newAccount.username,
+            pageName: newAccount.page_name || newAccount.username,
+          }}
+          onConfirm={async () => {
+            try {
+              await instagramApi.updateMessageAccess(newAccount.id, true);
+              setAccounts(prev => prev.map(a =>
+                a.id === newAccount.id ? { ...a, message_access_enabled: true } : a
+              ));
+              toast.success('Message access confirmed! DM automation is now active. 🎉');
+            } catch (e) { console.error(e); }
+            setShowMessageAccess(false);
+          }}
+          onClose={() => {
+            setShowMessageAccess(false);
+            toast('DM automation won\'t work until you enable message access.', { icon: '⚠️' });
+          }}
+        />
+      )}
     <div style={{ maxWidth: 1100, animation: 'fadeUp 0.4s ease both' }}>
       {/* Header */}
       <div style={{ marginBottom: 36 }}>
@@ -166,6 +207,7 @@ export default function Dashboard() {
         </div>
       </div>
     </div>
+    </>
   );
 }
 
