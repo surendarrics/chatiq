@@ -51,7 +51,15 @@ export default function ConnectPage() {
 
     try {
       // Decode the JWT payload (without verification — backend will verify on select)
-      const payload = JSON.parse(atob(session.split('.')[1]));
+      // JWT uses base64url encoding (- and _), but atob() needs standard base64 (+ and /)
+      const base64Url = session.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonStr = decodeURIComponent(
+        atob(base64).split('').map(c =>
+          '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+        ).join('')
+      );
+      const payload = JSON.parse(jsonStr);
       setSessionToken(session);
       setAvailableAccounts(payload.accounts || []);
       setPagesWithoutIG(payload.pagesWithoutIG || []);
