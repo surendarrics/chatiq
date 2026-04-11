@@ -14,10 +14,11 @@ const GRAPH_API_BASE = 'https://graph.facebook.com/v19.0';
 
 /**
  * GET /api/auth/instagram
- * Returns the Meta OAuth URL for Facebook Login
+ * Redirects the browser to Meta's OAuth login page.
+ * Frontend just does: window.location.href = "${BACKEND_URL}/api/auth/instagram"
  */
 router.get('/instagram', (req, res) => {
-  logger.info('🔗 GET /api/auth/instagram — generating OAuth URL');
+  logger.info('🔗 GET /api/auth/instagram — redirecting to Facebook OAuth');
   logger.info(`  Redirect URI: ${process.env.INSTAGRAM_REDIRECT_URI}`);
   logger.info(`  App ID: ${process.env.META_APP_ID}`);
 
@@ -38,8 +39,8 @@ router.get('/instagram', (req, res) => {
   });
 
   const authUrl = `${META_AUTH_URL}?${params.toString()}`;
-  logger.info(`  Generated auth URL: ${authUrl.substring(0, 100)}...`);
-  res.json({ authUrl, state });
+  logger.info(`  Redirecting to: ${authUrl.substring(0, 100)}...`);
+  res.redirect(authUrl);
 });
 
 /**

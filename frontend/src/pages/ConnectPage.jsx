@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import api, { authApi, instagramApi } from '../utils/api';
+import { authApi, instagramApi } from '../utils/api';
 import toast from 'react-hot-toast';
 import MessageAccessModal from '../components/MessageAccessModal';
 
@@ -21,46 +21,10 @@ export default function ConnectPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  // ── OAuth: redirect to backend, which redirects to Facebook ──
   const handleConnect = () => {
-    if (typeof window.FB === 'undefined') {
-      toast.error('Facebook SDK not loaded. Please wait and try again.');
-      return;
-    }
     setConnecting(true);
-
-    window.FB.login(
-      (response) => {
-        if (response.authResponse) {
-          authApi.connectInstagram(response.authResponse.accessToken)
-            .then((res) => {
-              if (res.data.token) localStorage.setItem('chatiq_token', res.data.token);
-              toast.success('Instagram connected!');
-              // Refresh accounts list
-              instagramApi.getAccounts()
-                .then(r => setAccounts(r.data.accounts || []));
-              // Show message access modal
-              if (res.data.accounts?.length > 0) {
-                setConnectedAccount({
-                  id: res.data.accounts[0].igAccountId,
-                  username: res.data.accounts[0].username,
-                  pageName: res.data.accounts[0].pageName,
-                });
-                setShowMessageModal(true);
-              }
-            })
-            .catch((err) => {
-              toast.error(err.response?.data?.error || 'Connection failed');
-            })
-            .finally(() => setConnecting(false));
-        } else {
-          setConnecting(false);
-          toast.error('Login was cancelled.');
-        }
-      },
-      {
-        scope: 'instagram_basic,instagram_manage_comments,instagram_manage_messages,pages_show_list,pages_read_engagement,pages_manage_metadata',
-      }
-    );
+    window.location.href = authApi.getInstagramAuthUrl();
   };
 
   const handleDisconnect = async (id) => {

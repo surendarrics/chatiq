@@ -1,11 +1,11 @@
 import axios from 'axios';
 
 // ── Base URL ─────────────────────────────────────────────────────────────────
-// REACT_APP_API_URL should be the backend root (no /api suffix)
+// REACT_APP_API_URL = backend root WITHOUT /api suffix
 // e.g. "https://chatiq-production.up.railway.app" or "http://localhost:3001"
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
-// Safety: warn if the URL looks wrong
+// Safety checks
 if (!API_URL.startsWith('http')) {
   console.error('[ChatIQ] ⚠️ REACT_APP_API_URL is missing or invalid:', API_URL);
 }
@@ -51,11 +51,13 @@ api.interceptors.response.use(
 export default api;
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
+// NOTE: getInstagramAuthUrl returns a URL string, NOT an axios call.
+// The frontend should do: window.location.href = authApi.getInstagramAuthUrl()
+// The backend will redirect the browser to Facebook OAuth automatically.
 export const authApi = {
-  getInstagramAuthUrl: () => api.get('/api/auth/instagram'),
-  connectInstagram: (accessToken) => api.post('/api/auth/instagram/connect', { accessToken }),
-  logout: () => api.post('/api/auth/logout'),
+  getInstagramAuthUrl: () => `${API_URL}/api/auth/instagram`,
   getMe: () => api.get('/api/auth/me'),
+  logout: () => api.post('/api/auth/logout'),
   refreshToken: (token) => api.post('/api/auth/refresh', { token }),
 };
 

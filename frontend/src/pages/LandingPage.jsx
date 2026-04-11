@@ -1,122 +1,22 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import api, { authApi, instagramApi } from '../utils/api';
-import toast from 'react-hot-toast';
-import MessageAccessModal from '../components/MessageAccessModal';
+import { authApi } from '../utils/api';
 
 export default function LandingPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [connecting, setConnecting] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState(null);
-  const [showMessageModal, setShowMessageModal] = useState(false);
-  const [connectedAccount, setConnectedAccount] = useState(null);
 
   useEffect(() => {
     if (user) navigate('/dashboard');
   }, [user, navigate]);
 
+  // ── OAuth: redirect to backend, which redirects to Facebook ──
   const handleConnect = () => {
-    if (typeof window.FB === 'undefined') {
-      toast.error('Facebook SDK not loaded yet. Please wait a moment and try again.');
-      return;
-    }
-
-    setConnecting(true);
-    setConnectionStatus(null);
-
-    window.FB.login(
-      (response) => {
-        if (response.authResponse) {
-          const accessToken = response.authResponse.accessToken;
-          console.log('✅ FB Login success, token:', accessToken.substring(0, 20) + '...');
-
-          // Send token to backend to complete the connection
-          authApi.connectInstagram(accessToken)
-            .then((res) => {
-              console.log('✅ Backend connect response:', res.data);
-              setConnectionStatus({
-                success: true,
-                message: `Successfully connected ${res.data.accounts.length} Instagram account(s)!`,
-                accounts: res.data.accounts,
-              });
-              toast.success('Instagram connected successfully!');
-
-              if (res.data.token) {
-                localStorage.setItem('chatiq_token', res.data.token);
-              }
-
-              // Show message access modal instead of auto-redirect
-              if (res.data.accounts?.length > 0) {
-                setConnectedAccount({
-                  id: res.data.accounts[0].igAccountId,
-                  username: res.data.accounts[0].username,
-                  pageName: res.data.accounts[0].pageName,
-                });
-                setShowMessageModal(true);
-              }
-            })
-            .catch((err) => {
-              console.error('❌ Backend connect error:', err.response?.data || err.message);
-              setConnectionStatus({
-                success: false,
-                message: err.response?.data?.error || 'Failed to connect Instagram account.',
-              });
-              toast.error('Connection failed. See details below.');
-            })
-            .finally(() => setConnecting(false));
-        } else {
-          console.log('❌ FB Login cancelled');
-          setConnecting(false);
-          toast.error('Login was cancelled.');
-        }
-      },
-      {
-        scope: [
-          'instagram_basic',
-          'instagram_manage_comments',
-          'instagram_manage_messages',
-          'pages_show_list',
-          'pages_read_engagement',
-          'pages_manage_metadata',
-        ].join(','),
-      }
-    );
-  };
-
-  const handleMessageAccessConfirm = async () => {
-    try {
-      const accRes = await instagramApi.getAccounts();
-      const acc = (accRes.data.accounts || []).find(a =>
-        a.ig_account_id === connectedAccount?.id || a.username === connectedAccount?.username
-      );
-      if (acc) {
-        await instagramApi.updateMessageAccess(acc.id, true);
-        toast.success('Message access confirmed! 🎉');
-      }
-    } catch (e) {
-      console.error('Failed to update message access:', e);
-    }
-    setShowMessageModal(false);
-    navigate('/dashboard');
-  };
-
-  const handleMessageAccessSkip = () => {
-    setShowMessageModal(false);
-    toast('DM automation may fail until you enable message access.', { icon: '⚠️' });
-    navigate('/dashboard');
+    window.location.href = authApi.getInstagramAuthUrl();
   };
 
   return (
-    <>
-      {showMessageModal && connectedAccount && (
-        <MessageAccessModal
-          account={connectedAccount}
-          onConfirm={handleMessageAccessConfirm}
-          onClose={handleMessageAccessSkip}
-        />
-      )}
     <div style={{ minHeight: '100vh', background: 'var(--bg-base)', overflow: 'hidden' }}>
       {/* Background mesh */}
       <div style={{
@@ -169,54 +69,12 @@ export default function LandingPage() {
         </p>
 
         <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <button onClick={handleConnect} disabled={connecting} style={{
-            ...styles.primaryBtn,
-            opacity: connecting ? 0.7 : 1,
-            cursor: connecting ? 'wait' : 'pointer',
-          }}>
+          <button onClick={handleConnect} style={styles.primaryBtn}>
             <InstagramIcon />
-            {connecting ? 'Connecting...' : 'Connect Instagram — it\'s free'}
+            Connect Instagram — it's free
           </button>
           <a href="#how-it-works" style={styles.ghostBtn}>See how it works →</a>
         </div>
-
-        {/* Connection status banner */}
-        {connectionStatus && (
-          <div style={{
-            marginTop: 24,
-            padding: '16px 24px',
-            borderRadius: 12,
-            background: connectionStatus.success
-              ? 'rgba(34,211,165,0.1)'
-              : 'rgba(239,68,68,0.1)',
-            border: `1px solid ${connectionStatus.success
-              ? 'rgba(34,211,165,0.3)'
-              : 'rgba(239,68,68,0.3)'}`,
-            textAlign: 'left',
-            maxWidth: 560,
-            margin: '24px auto 0',
-          }}>
-            <div style={{
-              fontSize: 15, fontWeight: 600, marginBottom: 8,
-              color: connectionStatus.success ? 'var(--success)' : '#ef4444',
-            }}>
-              {connectionStatus.success ? '✅ Connected!' : '❌ Connection Failed'}
-            </div>
-            <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
-              {connectionStatus.message}
-            </div>
-            {connectionStatus.accounts?.map((acc, i) => (
-              <div key={i} style={{
-                marginTop: 8, padding: '8px 12px',
-                background: 'rgba(255,255,255,0.05)',
-                borderRadius: 8, fontSize: 13,
-                color: 'var(--text-primary)',
-              }}>
-                📸 @{acc.username} — Page: {acc.pageName}
-              </div>
-            ))}
-          </div>
-        )}
 
         <p style={{ marginTop: 20, fontSize: 13, color: 'var(--text-muted)' }}>
           No credit card required · Official Meta API · GDPR compliant
@@ -281,7 +139,6 @@ export default function LandingPage() {
         <p>© 2025 ChatIQ. Built with the official Meta Instagram API.</p>
       </footer>
     </div>
-    </>
   );
 }
 
