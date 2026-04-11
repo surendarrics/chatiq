@@ -163,7 +163,7 @@ router.get('/instagram/callback', async (req, res) => {
 
     // ─── Step 5: Save Instagram account ───
     logger.info('Step 5: Saving Instagram account...');
-    await supabase
+    const { data: savedAccount, error: accountError } = await supabase
       .from('instagram_accounts')
       .upsert({
         user_id: user.id,
@@ -174,11 +174,19 @@ router.get('/instagram/callback', async (req, res) => {
         access_token: longLivedToken,
         token_expires_at: new Date(Date.now() + (expiresIn || 5184000) * 1000).toISOString(),
         updated_at: new Date().toISOString(),
-        // page_id and page_access_token are null — not needed with Instagram Login
+        // Instagram Login doesn't require a Facebook Page, but the DB may have these columns
+        page_id: '',
+        page_name: profile.username || '',
+        page_access_token: longLivedToken,
       }, { onConflict: 'ig_account_id' })
       .select();
 
-    logger.info(`✅ Saved IG account: @${profile.username}`);
+    if (accountError) {
+      logger.error('❌ Instagram account save error:', accountError);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=db_error`);
+    }
+
+    logger.info(`✅ Saved IG account: @${profile.username}`, savedAccount);
 
     // ─── Step 6: Generate JWT and redirect to frontend ───
     const jwtToken = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
