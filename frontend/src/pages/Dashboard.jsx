@@ -80,11 +80,19 @@ export default function Dashboard() {
           onConfirm={async () => {
             try {
               await instagramApi.updateMessageAccess(newAccount.id, true);
+              // Ensure we subscribe to Meta Webhooks for this account!
+              await instagramApi.subscribeWebhook(newAccount.id).catch(e => {
+                console.warn('Silent webhook subscription warning:', e);
+              });
+
               setAccounts(prev => prev.map(a =>
                 a.id === newAccount.id ? { ...a, message_access_enabled: true } : a
               ));
               toast.success('Message access confirmed! DM automation is now active. 🎉');
-            } catch (e) { console.error(e); }
+            } catch (e) {
+              console.error(e);
+              toast.error('Failed to update message access');
+            }
             setShowMessageAccess(false);
           }}
           onClose={() => {

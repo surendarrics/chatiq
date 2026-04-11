@@ -99,21 +99,21 @@ router.get('/accounts/:accountId/validate', authenticateToken, async (req, res) 
 
 /**
  * POST /api/instagram/accounts/:accountId/subscribe
- * Subscribe to webhooks (for Facebook Login accounts only)
+ * Subscribe to webhooks for both Instagram Login and Facebook Login accounts
  */
 router.post('/accounts/:accountId/subscribe', authenticateToken, async (req, res) => {
   try {
     const { data: account } = await supabase
       .from('instagram_accounts')
-      .select('page_id, page_access_token, page_name')
+      .select('page_id, page_access_token, page_name, access_token, ig_account_id, username')
       .eq('id', req.params.accountId)
       .eq('user_id', req.user.id)
       .single();
 
     if (!account) return res.status(404).json({ error: 'Account not found' });
 
-    const result = await instagramApi.subscribePageToWebhook(account.page_id, account.page_access_token);
-    logger.info(`✅ Webhook subscription for ${account.page_name}:`, result);
+    const result = await instagramApi.subscribePageToWebhook(account);
+    logger.info(`✅ Webhook subscription for @${account.username || account.page_name}:`, result);
     res.json({ success: true, data: result });
   } catch (err) {
     logger.error('Subscribe error:', err.response?.data || err.message);

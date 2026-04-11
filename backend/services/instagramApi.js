@@ -214,28 +214,31 @@ async function validateToken(accessToken) {
 }
 
 /**
- * Subscribe page to webhook events (Facebook Login only)
+ * Subscribe account to webhook events
+ * Supports both Instagram Login AND Facebook Login
  */
-async function subscribePageToWebhook(pageId, pageAccessToken) {
-  if (!pageId || pageId === '') {
-    logger.info('No page_id — skipping webhook subscription (Instagram Login accounts use Instagram webhooks)');
-    return { success: true, note: 'Instagram Login — no page subscription needed' };
-  }
+async function subscribePageToWebhook(account) {
+  const isIgLogin = !account.page_id || account.page_id === '';
+  const token = isIgLogin ? account.access_token : account.page_access_token;
+  const targetId = isIgLogin ? account.ig_account_id : account.page_id;
+  const apiBase = isIgLogin ? IG_GRAPH_BASE : FB_GRAPH_BASE;
+  const fields = isIgLogin ? 'comments,messages' : 'feed,comments,messages,message_reactions';
+
   try {
     const response = await axios.post(
-      `${FB_GRAPH_BASE}/${pageId}/subscribed_apps`,
+      `${apiBase}/${targetId}/subscribed_apps`,
       null,
       {
         params: {
-          subscribed_fields: 'feed,comments,messages,message_reactions',
-          access_token: pageAccessToken,
+          subscribed_fields: fields,
+          access_token: token,
         },
       }
     );
     return response.data;
   } catch (error) {
     logger.error('Webhook subscribe error:', error.response?.data || error.message);
-    throw new Error('Failed to subscribe page to webhook');
+    throw new Error('Failed to subscribe account to webhook');
   }
 }
 
