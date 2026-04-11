@@ -50,15 +50,16 @@ function getRedirectUri(req) {
  */
 router.get('/instagram', (req, res) => {
   const redirectUri = getRedirectUri(req);
+  const igAppId = process.env.INSTAGRAM_APP_ID || process.env.META_APP_ID;
   logger.info('🔗 GET /api/auth/instagram — redirecting to Instagram OAuth');
   logger.info(`  Redirect URI: ${redirectUri}`);
-  logger.info(`  App ID: ${process.env.META_APP_ID}`);
+  logger.info(`  Instagram App ID: ${igAppId}`);
   logger.info(`  Scopes: ${IG_SCOPES}`);
 
   const params = new URLSearchParams({
     enable_fb_login: '0',           // Only show Instagram login (not Facebook)
     force_authentication: '1',      // Always show login screen
-    client_id: process.env.META_APP_ID,
+    client_id: igAppId,
     redirect_uri: redirectUri,
     response_type: 'code',
     scope: IG_SCOPES,
@@ -97,10 +98,12 @@ router.get('/instagram/callback', async (req, res) => {
     // ─── Step 1: Exchange code for short-lived access token ───
     // Instagram uses POST with form-encoded body (NOT GET like Facebook)
     logger.info('Step 1: Exchanging code for short-lived token...');
+    const igAppId = process.env.INSTAGRAM_APP_ID || process.env.META_APP_ID;
+    const igAppSecret = process.env.INSTAGRAM_APP_SECRET || process.env.META_APP_SECRET;
     const tokenResponse = await axios.post(IG_TOKEN_URL,
       new URLSearchParams({
-        client_id: process.env.META_APP_ID,
-        client_secret: process.env.META_APP_SECRET,
+        client_id: igAppId,
+        client_secret: igAppSecret,
         grant_type: 'authorization_code',
         redirect_uri: redirectUri,
         code,
@@ -117,7 +120,7 @@ router.get('/instagram/callback', async (req, res) => {
     const longLivedResponse = await axios.get(`${IG_GRAPH_BASE}/access_token`, {
       params: {
         grant_type: 'ig_exchange_token',
-        client_secret: process.env.META_APP_SECRET,
+        client_secret: igAppSecret,
         access_token: shortLivedToken,
       },
     });
