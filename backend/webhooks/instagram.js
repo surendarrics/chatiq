@@ -230,13 +230,19 @@ async function handleComment(entryId, value, source) {
           await new Promise(r => setTimeout(r, 1000));
 
           // Private Reply to comment
+          const dmParams = { access_token: TOKEN };
+          // Only Facebook Graph API requires the platform=instagram parameter for sending IG messages
+          if (API_BASE === GRAPH_API) {
+            dmParams.platform = 'instagram';
+          }
+
           const dmRes = await axios.post(
             `${API_BASE}/me/messages`,
             {
               recipient: { comment_id: commentId },
               message: { text: auto.dm_text },
             },
-            { params: { access_token: TOKEN, platform: 'instagram' } }
+            { params: dmParams }
           );
           console.log(`✅ DM sent! Response:`, dmRes.data);
           dmSent = true;
@@ -257,8 +263,8 @@ async function handleComment(entryId, value, source) {
         status: (replySent || dmSent) ? 'completed' : 'failed',
         reply_sent: replySent,
         dm_sent: dmSent,
-        reply_error: replyError,
-        dm_error: dmError,
+        reply_error: replyError ? String(replyError).substring(0, 250) : null,
+        dm_error: dmError ? String(dmError).substring(0, 250) : null,
         processed_at: new Date().toISOString(),
       });
 
