@@ -17,6 +17,10 @@ const GRAPH_API_BASE = 'https://graph.facebook.com/v19.0';
  * Returns the Meta OAuth URL for Facebook Login
  */
 router.get('/instagram', (req, res) => {
+  logger.info('🔗 GET /api/auth/instagram — generating OAuth URL');
+  logger.info(`  Redirect URI: ${process.env.INSTAGRAM_REDIRECT_URI}`);
+  logger.info(`  App ID: ${process.env.META_APP_ID}`);
+
   const state = uuidv4();
   const params = new URLSearchParams({
     client_id: process.env.META_APP_ID,
@@ -33,7 +37,9 @@ router.get('/instagram', (req, res) => {
     state,
   });
 
-  res.json({ authUrl: `${META_AUTH_URL}?${params.toString()}`, state });
+  const authUrl = `${META_AUTH_URL}?${params.toString()}`;
+  logger.info(`  Generated auth URL: ${authUrl.substring(0, 100)}...`);
+  res.json({ authUrl, state });
 });
 
 /**
@@ -41,14 +47,18 @@ router.get('/instagram', (req, res) => {
  * Handle Meta OAuth callback — exchange code, get pages, save IG accounts
  */
 router.get('/instagram/callback', async (req, res) => {
+  logger.info('🔁 GET /api/auth/instagram/callback — OAuth callback received');
+  logger.info(`  Query params: ${JSON.stringify(req.query)}`);
+
   const { code, error } = req.query;
 
   if (error) {
-    logger.warn('OAuth error:', error);
+    logger.warn('OAuth error from Meta:', error, req.query.error_description);
     return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=oauth_denied`);
   }
 
   if (!code) {
+    logger.warn('No code in callback query params');
     return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=no_code`);
   }
 
@@ -175,7 +185,12 @@ router.get('/instagram/callback', async (req, res) => {
     res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${jwtToken}`);
 
   } catch (err) {
-    logger.error('OAuth callback error:', err.response?.data || err.message);
+    logger.error('❌ OAuth callback error:', {
+      message: err.message,
+      responseData: err.response?.data,
+      responseStatus: err.response?.status,
+      stack: err.stack?.split('\n').slice(0, 3).join('\n'),
+    });
     res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=auth_failed`);
   }
 });
@@ -243,12 +258,15 @@ router.post('/instagram/connect', async (req, res) => {
   const { accessToken } = req.body;
 
   if (!accessToken) {
+    logger.warn('❌ /instagram/connect — missing accessToken in request body');
     return res.status(400).json({ error: 'Missing accessToken' });
   }
 
-  try {
-    logger.info('📥 /instagram/connect — received token from FB SDK');
+  logger.info('📥 /instagram/connect — received token from FB SDK');
+  logger.info(`  Token preview: ${accessToken.substring(0, 20)}...`);
+  logger.info(`  App ID: ${process.env.META_APP_ID}`);
 
+  try {
     // ─── Step 1: Exchange for long-lived token ───
     const llRes = await axios.get(`${GRAPH_API_BASE}/oauth/access_token`, {
       params: {
@@ -373,7 +391,12 @@ router.post('/instagram/connect', async (req, res) => {
     });
 
   } catch (err) {
-    logger.error('❌ /instagram/connect error:', err.response?.data || err.message);
+    logger.error('❌ /instagram/connect error:', {
+      message: err.message,
+      responseData: err.response?.data,
+      responseStatus: err.response?.status,
+      url: err.config?.url,
+    });
     res.status(500).json({
       error: err.response?.data?.error?.message || 'Failed to connect Instagram account.',
     });

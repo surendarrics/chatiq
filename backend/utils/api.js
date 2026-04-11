@@ -1,11 +1,8 @@
 const axios = require('axios');
 
+// Internal API client for backend-to-backend calls (if needed)
 const API = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:3001/api',
+  baseURL: `http://localhost:${process.env.PORT || 3001}/api`,
 });
-
-// Note: This file is in the backend utils folder.
-// The frontend has its own api.js at frontend/src/utils/api.js
-// This file is only used if the backend needs to make internal API calls.
 
 module.exports = API;

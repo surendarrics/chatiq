@@ -5,8 +5,6 @@ import api, { instagramApi } from '../utils/api';
 import toast from 'react-hot-toast';
 import MessageAccessModal from '../components/MessageAccessModal';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
-
 export default function LandingPage() {
   const { user } = useAuth();
   const navigate = useNavigate();

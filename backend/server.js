@@ -17,8 +17,24 @@ const PORT = process.env.PORT || 3001;
 
 // ── Security Middleware ──────────────────────────────────────────────────────
 app.use(helmet());
+
+// ── CORS — allow production + localhost ────────────────────────────────────
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'https://chatiq.yosipo.com',
+  'http://localhost:3000',
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, health checks)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    logger.warn(`CORS blocked origin: ${origin}`);
+    return callback(new Error(`Origin ${origin} not allowed by CORS`));
+  },
   credentials: true,
 }));
 
@@ -41,6 +57,16 @@ app.use(express.urlencoded({ extended: true }));
 app.use(morgan('combined', {
   stream: { write: (msg) => logger.info(msg.trim()) },
 }));
+
+// ── Root Route ────────────────────────────────────────────────────────────────
+app.get('/', (req, res) => {
+  res.json({
+    message: 'ChatIQ API running',
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    version: '1.0.0',
+  });
+});
 
 // ── Health Check ─────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
@@ -70,7 +96,10 @@ app.use((err, req, res, next) => {
 // ── Start Server ─────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   logger.info(`🚀 ChatIQ Backend running on port ${PORT}`);
-  logger.info(`📡 Webhook endpoint: http://localhost:${PORT}/webhook/instagram`);
+  logger.info(`📡 Environment: ${process.env.NODE_ENV || 'development'}`);
+  logger.info(`📡 Frontend URL: ${process.env.FRONTEND_URL}`);
+  logger.info(`📡 Allowed CORS origins: ${allowedOrigins.join(', ')}`);
+  logger.info(`📡 Webhook endpoint: /webhook/instagram`);
 });
 
 module.exports = app;

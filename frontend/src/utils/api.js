@@ -2,9 +2,20 @@ import axios from 'axios';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
 
+// Debug: log the resolved API URL on startup (dev only)
+if (process.env.NODE_ENV === 'development') {
+  console.log('[ChatIQ] API base URL:', API_URL);
+}
+
+// Validate API_URL to catch misconfigurations early
+if (API_URL.includes('.up.instagram') || !API_URL.startsWith('http')) {
+  console.error('[ChatIQ] ⚠️ Invalid API URL detected:', API_URL);
+}
+
 const api = axios.create({
   baseURL: API_URL,
   headers: { 'Content-Type': 'application/json' },
+  timeout: 30000, // 30s timeout to avoid hanging requests
 });
 
 // Attach token to every request
