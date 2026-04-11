@@ -17,10 +17,10 @@ export default function AuthCallback() {
 
     if (error) {
       const messages = {
-        oauth_denied: 'Instagram connection was denied.',
-        no_pages: 'No Facebook Pages found. Please connect a Page with an Instagram Business account.',
+        oauth_denied: 'Instagram login was cancelled or denied.',
         auth_failed: 'Authentication failed. Please try again.',
         db_error: 'A server error occurred. Please try again.',
+        not_business: 'Your Instagram account must be a Business or Creator account to use ChatIQ.',
       };
       toast.error(messages[error] || 'Connection failed.');
       navigate('/', { replace: true });

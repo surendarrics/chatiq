@@ -59,11 +59,9 @@ export default api;
 // ── Auth ─────────────────────────────────────────────────────────────────────
 // NOTE: getInstagramAuthUrl returns a URL string, NOT an axios call.
 // The frontend should do: window.location.href = authApi.getInstagramAuthUrl()
-// The backend will redirect the browser to Facebook OAuth automatically.
+// The backend will redirect the browser to Instagram OAuth automatically.
 export const authApi = {
   getInstagramAuthUrl: () => `${API_URL}/api/auth/instagram`,
-  selectAccount: (sessionToken, pageId, instagramId) =>
-    api.post('/api/auth/instagram/select', { sessionToken, pageId, instagramId }),
   getMe: () => api.get('/api/auth/me'),
   logout: () => api.post('/api/auth/logout'),
   refreshToken: (token) => api.post('/api/auth/refresh', { token }),

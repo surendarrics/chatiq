@@ -1,132 +1,53 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { authApi, instagramApi } from '../utils/api';
 import toast from 'react-hot-toast';
 import MessageAccessModal from '../components/MessageAccessModal';
 
 export default function ConnectPage() {
-  const { user } = useAuth();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const processed = useRef(false);
 
-  // Existing connected accounts
+  // Connected accounts (from DB)
   const [connectedAccounts, setConnectedAccounts] = useState([]);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
 
-  // Account picker (after OAuth)
-  const [availableAccounts, setAvailableAccounts] = useState([]);
-  const [pagesWithoutIG, setPagesWithoutIG] = useState([]);
-  const [sessionToken, setSessionToken] = useState(null);
-  const [selected, setSelected] = useState(null);
-  const [connecting, setConnecting] = useState(false);
-
   // Message access modal
   const [showMessageModal, setShowMessageModal] = useState(false);
-  const [justConnectedAccount, setJustConnectedAccount] = useState(null);
+  const [modalAccount, setModalAccount] = useState(null);
 
-  // Troubleshooting
-  const [showSetupGuide, setShowSetupGuide] = useState(false);
-
-  // Load connected accounts (only if user is already authenticated)
+  // Load connected accounts (only if authenticated)
   useEffect(() => {
     const token = localStorage.getItem('chatiq_token');
-    if (!token) {
-      setLoadingAccounts(false);
-      return;
-    }
+    if (!token) { setLoadingAccounts(false); return; }
     instagramApi.getAccounts()
       .then(res => setConnectedAccounts(res.data.accounts || []))
       .catch(() => {})
       .finally(() => setLoadingAccounts(false));
   }, []);
 
-  // Parse session from URL (redirected from OAuth callback)
+  // Check if we just came back from auth (flag set by AuthCallback → Dashboard)
   useEffect(() => {
-    if (processed.current) return;
-    const session = searchParams.get('session');
-    if (!session) return;
-    processed.current = true;
-
-    try {
-      // Decode the JWT payload (without verification — backend will verify on select)
-      // JWT uses base64url encoding (- and _), but atob() needs standard base64 (+ and /)
-      const base64Url = session.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonStr = decodeURIComponent(
-        atob(base64).split('').map(c =>
-          '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
-        ).join('')
-      );
-      const payload = JSON.parse(jsonStr);
-      setSessionToken(session);
-      setAvailableAccounts(payload.accounts || []);
-      setPagesWithoutIG(payload.pagesWithoutIG || []);
-
-      // Auto-select if only one IG account
-      if (payload.accounts?.length === 1) {
-        setSelected(payload.accounts[0]);
-      }
-
-      // Show guide if no IG accounts found but pages exist
-      if ((!payload.accounts || payload.accounts.length === 0) && payload.pagesWithoutIG?.length > 0) {
-        setShowSetupGuide(true);
-      }
-    } catch (e) {
-      console.error('Failed to parse session token:', e);
-      toast.error('Invalid session. Please try connecting again.');
+    const justConnected = sessionStorage.getItem('chatiq_show_connect_modal');
+    if (justConnected) {
+      sessionStorage.removeItem('chatiq_show_connect_modal');
+      // Reload accounts to show the newly connected one
+      instagramApi.getAccounts()
+        .then(res => {
+          const accounts = res.data.accounts || [];
+          setConnectedAccounts(accounts);
+          // Show message access modal for the most recently connected account
+          const latest = accounts[accounts.length - 1];
+          if (latest && !latest.message_access_enabled) {
+            setModalAccount(latest);
+            setShowMessageModal(true);
+          }
+        })
+        .catch(() => {});
     }
-  }, [searchParams]);
+  }, []);
 
-  // Start OAuth flow
-  const handleStartOAuth = () => {
+  const handleConnect = () => {
     window.location.href = authApi.getInstagramAuthUrl();
-  };
-
-  // Connect the selected account
-  const handleConnectSelected = async () => {
-    if (!selected || !sessionToken) return;
-
-    setConnecting(true);
-    try {
-      const res = await authApi.selectAccount(
-        sessionToken,
-        selected.pageId,
-        selected.instagramId
-      );
-
-      // Store auth token
-      if (res.data.token) {
-        localStorage.setItem('chatiq_token', res.data.token);
-      }
-
-      toast.success(`@${res.data.account.username} connected!`);
-
-      // Clear picker state
-      setAvailableAccounts([]);
-      setPagesWithoutIG([]);
-      setSessionToken(null);
-      setSelected(null);
-
-      // Refresh connected accounts list
-      const accRes = await instagramApi.getAccounts();
-      setConnectedAccounts(accRes.data.accounts || []);
-
-      // Show message access modal
-      setJustConnectedAccount(res.data.account);
-      setShowMessageModal(true);
-
-    } catch (err) {
-      const msg = err.response?.data?.error || 'Failed to connect. Please try again.';
-      toast.error(msg);
-      if (err.response?.status === 401) {
-        setAvailableAccounts([]);
-        setSessionToken(null);
-      }
-    } finally {
-      setConnecting(false);
-    }
   };
 
   const handleDisconnect = async (id) => {
@@ -135,56 +56,44 @@ export default function ConnectPage() {
       await instagramApi.deleteAccount(id);
       setConnectedAccounts(prev => prev.filter(a => a.id !== id));
       toast.success('Account disconnected');
-    } catch {
-      toast.error('Failed to disconnect');
-    }
+    } catch { toast.error('Failed to disconnect'); }
   };
 
-  const showPicker = availableAccounts.length > 0 || pagesWithoutIG.length > 0;
+  const handleEnableMessageAccess = async (account) => {
+    setModalAccount(account);
+    setShowMessageModal(true);
+  };
 
   return (
     <>
-      {showMessageModal && justConnectedAccount && (
+      {/* Message Access Modal */}
+      {showMessageModal && modalAccount && (
         <MessageAccessModal
           account={{
-            id: justConnectedAccount.instagramId,
-            username: justConnectedAccount.username,
-            pageName: justConnectedAccount.pageName,
+            id: modalAccount.ig_account_id || modalAccount.id,
+            username: modalAccount.username,
+            pageName: modalAccount.page_name || modalAccount.username,
           }}
           onConfirm={async () => {
             try {
-              const accRes = await instagramApi.getAccounts();
-              const acc = (accRes.data.accounts || []).find(a =>
-                a.ig_account_id === justConnectedAccount.instagramId
-              );
-              if (acc) {
-                await instagramApi.updateMessageAccess(acc.id, true);
-                setConnectedAccounts(prev => prev.map(a =>
-                  a.id === acc.id ? { ...a, message_access_enabled: true } : a
-                ));
-                toast.success('Message access confirmed! 🎉');
-              }
-            } catch (e) {
-              console.error(e);
-            }
+              await instagramApi.updateMessageAccess(modalAccount.id, true);
+              setConnectedAccounts(prev => prev.map(a =>
+                a.id === modalAccount.id ? { ...a, message_access_enabled: true } : a
+              ));
+              toast.success('Message access confirmed! 🎉');
+            } catch (e) { console.error(e); }
             setShowMessageModal(false);
-            navigate('/dashboard');
           }}
           onClose={() => {
             setShowMessageModal(false);
-            toast('DM automation may fail until you enable message access.', { icon: '⚠️' });
-            navigate('/dashboard');
+            toast('DM automation won\'t work until you enable message access.', { icon: '⚠️' });
           }}
         />
       )}
 
-      <div style={{
-        minHeight: '100vh', background: 'var(--bg-base)',
-        display: 'flex', flexDirection: 'column', alignItems: 'center',
-        padding: '60px 24px',
-      }}>
-        <div style={{ width: '100%', maxWidth: 640 }}>
-          {/* Logo + back */}
+      <div style={pageStyle}>
+        <div style={{ width: '100%', maxWidth: 560 }}>
+          {/* Header */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 48 }}>
             <Logo />
             {connectedAccounts.length > 0 && (
@@ -194,254 +103,43 @@ export default function ConnectPage() {
             )}
           </div>
 
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 36, fontWeight: 800, marginBottom: 10 }}>
-            {showPicker ? 'Select Account' : 'Connect Instagram'}
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: 16, marginBottom: 40, lineHeight: 1.6 }}>
-            {showPicker
-              ? 'Choose which Instagram account to connect to ChatIQ.'
-              : 'Link your Instagram Business account to start automating comments and DMs.'}
+          <h1 style={titleStyle}>Connect Instagram</h1>
+          <p style={subtitleStyle}>
+            Link your Instagram account to start automating comments and DMs.
           </p>
 
-          {/* ═══════════════════════════════════════════════════════════════ */}
-          {/* ACCOUNT PICKER (after OAuth)                                   */}
-          {/* ═══════════════════════════════════════════════════════════════ */}
-          {showPicker && (
-            <div style={{ marginBottom: 32 }}>
-
-              {/* ── Available IG accounts (selectable) ── */}
-              {availableAccounts.length > 0 && (
-                <>
-                  <h3 style={sectionLabel}>Available Accounts</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
-                    {availableAccounts.map(acc => {
-                      const isSelected = selected?.instagramId === acc.instagramId;
-                      return (
-                        <button
-                          key={acc.instagramId}
-                          onClick={() => setSelected(acc)}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 16,
-                            padding: '16px 20px', borderRadius: 'var(--radius)',
-                            background: isSelected ? 'rgba(232,67,147,0.08)' : 'var(--bg-surface)',
-                            border: isSelected ? '2px solid var(--accent)' : '1px solid var(--border)',
-                            cursor: 'pointer', width: '100%', textAlign: 'left',
-                            transition: 'all 0.15s ease',
-                          }}
-                        >
-                          <AccountAvatar url={acc.profilePictureUrl} />
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 600, marginBottom: 2, color: 'var(--text-primary)' }}>
-                              @{acc.username || 'unknown'}
-                            </div>
-                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                              Page: {acc.pageName} · {(acc.followersCount || 0).toLocaleString()} followers
-                            </div>
-                          </div>
-                          <RadioDot selected={isSelected} />
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Connect button */}
-                  <button
-                    onClick={handleConnectSelected}
-                    disabled={!selected || connecting}
-                    style={{
-                      width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-                      background: selected ? 'linear-gradient(135deg, #e1306c, #833ab4)' : 'var(--bg-elevated)',
-                      border: selected ? 'none' : '1px solid var(--border)',
-                      color: selected ? '#fff' : 'var(--text-muted)',
-                      padding: '14px 28px', borderRadius: 'var(--radius)',
-                      fontSize: 15, fontWeight: 600,
-                      cursor: !selected || connecting ? 'default' : 'pointer',
-                      opacity: !selected || connecting ? 0.6 : 1,
-                      fontFamily: 'var(--font-body)', transition: 'all 0.2s',
-                    }}
-                  >
-                    <InstagramIcon />
-                    {connecting ? 'Connecting…' : selected ? `Connect @${selected.username}` : 'Select an account'}
-                  </button>
-                </>
-              )}
-
-              {/* ── Pages WITHOUT Instagram linked (not selectable) ── */}
-              {pagesWithoutIG.length > 0 && (
-                <div style={{ marginTop: availableAccounts.length > 0 ? 28 : 0 }}>
-                  <h3 style={sectionLabel}>
-                    Pages Without Instagram
-                    <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>
-                      — needs setup
-                    </span>
-                  </h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {pagesWithoutIG.map(page => (
-                      <div
-                        key={page.pageId}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 16,
-                          padding: '16px 20px', borderRadius: 'var(--radius)',
-                          background: 'var(--bg-surface)', border: '1px dashed var(--border)',
-                          opacity: 0.65,
-                        }}
-                      >
-                        <div style={{
-                          width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
-                          background: 'var(--bg-elevated)', display: 'flex',
-                          alignItems: 'center', justifyContent: 'center', fontSize: 18,
-                        }}>📄</div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 600, marginBottom: 2, color: 'var(--text-primary)' }}>
-                            {page.pageName}
-                          </div>
-                          <div style={{ fontSize: 12, color: '#f59e0b' }}>
-                            ⚠ No Instagram Business account linked
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* ── No IG accounts at all ── */}
-              {availableAccounts.length === 0 && pagesWithoutIG.length > 0 && (
-                <div style={{
-                  marginTop: 20, padding: '16px 20px', borderRadius: 'var(--radius)',
-                  background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)',
-                }}>
-                  <div style={{ fontWeight: 600, color: '#f59e0b', marginBottom: 8, fontSize: 15 }}>
-                    No Instagram Business accounts found
-                  </div>
-                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 }}>
-                    Your Facebook Pages don't have Instagram Business accounts linked.
-                    Follow the setup guide below to connect your Instagram account to a Page.
-                  </p>
-                </div>
-              )}
-
-              {/* ── Troubleshooting / Setup Guide ── */}
-              <div style={{ marginTop: 24 }}>
-                <button
-                  onClick={() => setShowSetupGuide(!showSetupGuide)}
-                  style={{
-                    background: 'none', border: 'none', color: 'var(--accent)',
-                    cursor: 'pointer', fontSize: 13, fontWeight: 600, padding: 0,
-                    fontFamily: 'var(--font-body)',
-                  }}
-                >
-                  {showSetupGuide ? '▼' : '▶'} Don't see your Instagram account? Setup guide
-                </button>
-
-                {showSetupGuide && (
-                  <div style={{
-                    marginTop: 12, padding: 20, borderRadius: 'var(--radius)',
-                    background: 'var(--bg-surface)', border: '1px solid var(--border)',
-                  }}>
-                    <h4 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, color: 'var(--text-primary)' }}>
-                      How to connect your Instagram account
-                    </h4>
-
-                    {SETUP_STEPS.map((step, i) => (
-                      <div key={i} style={{ display: 'flex', gap: 14, marginBottom: 16 }}>
-                        <div style={{
-                          width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-                          background: 'var(--accent)', color: '#fff',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: 13, fontWeight: 700,
-                        }}>{i + 1}</div>
-                        <div>
-                          <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)', fontSize: 14 }}>
-                            {step.title}
-                          </div>
-                          <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                            {step.description}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-
-                    <div style={{
-                      marginTop: 16, padding: '12px 16px', borderRadius: 8,
-                      background: 'rgba(232,67,147,0.06)', border: '1px solid rgba(232,67,147,0.15)',
-                    }}>
-                      <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0, lineHeight: 1.6 }}>
-                        <strong style={{ color: 'var(--accent)' }}>After completing these steps:</strong> Click
-                        "Connect with Instagram" below to re-authorize. Your newly linked account will appear in the list.
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Re-connect button (to re-start OAuth after fixing setup) */}
-              <button
-                onClick={handleStartOAuth}
-                style={{
-                  marginTop: 16, width: '100%',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-                  background: 'var(--bg-surface)', border: '1px solid var(--border)',
-                  color: 'var(--text-secondary)', padding: '12px 20px',
-                  borderRadius: 'var(--radius)', fontSize: 13, fontWeight: 600,
-                  cursor: 'pointer', fontFamily: 'var(--font-body)',
-                  transition: 'all 0.15s',
-                }}
-              >
-                🔄 Re-authorize with Facebook (refresh account list)
-              </button>
-
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 10, textAlign: 'center' }}>
-                This session expires in 10 minutes.
-              </p>
-            </div>
-          )}
-
-          {/* ═══════════════════════════════════════════════════════════════ */}
-          {/* CONNECTED ACCOUNTS (already saved in DB)                      */}
-          {/* ═══════════════════════════════════════════════════════════════ */}
+          {/* ═══ Connected Accounts ═══ */}
           {!loadingAccounts && connectedAccounts.length > 0 && (
-            <div style={{ marginBottom: 32 }}>
+            <div style={{ marginBottom: 28 }}>
               <h3 style={sectionLabel}>Connected Accounts</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {connectedAccounts.map(acc => (
-                  <div key={acc.id} style={{
-                    display: 'flex', alignItems: 'center', gap: 16,
-                    padding: '16px 20px', borderRadius: 'var(--radius)',
-                    background: 'var(--bg-surface)', border: '1px solid var(--border)',
-                  }}>
-                    <AccountAvatar url={acc.profile_picture_url} />
+                  <div key={acc.id} style={accountCard}>
+                    <AccountAvatar url={acc.profile_picture_url} username={acc.username} />
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, marginBottom: 2 }}>@{acc.username || acc.page_name}</div>
+                      <div style={{ fontWeight: 600, marginBottom: 3 }}>@{acc.username}</div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                         {acc.followers_count?.toLocaleString() || '—'} followers
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <span style={{
-                        fontSize: 11, padding: '3px 10px', borderRadius: 20,
-                        background: 'rgba(34,211,165,0.1)', color: 'var(--success)',
-                        border: '1px solid rgba(34,211,165,0.2)',
-                      }}>✓ Connected</span>
-                      {!acc.message_access_enabled && (
-                        <span style={{
-                          fontSize: 11, padding: '3px 10px', borderRadius: 20,
-                          background: 'rgba(245,158,11,0.1)', color: '#f59e0b',
-                          border: '1px solid rgba(245,158,11,0.2)',
-                        }}>⚠ DM disabled</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <Badge type="success">✓ Connected</Badge>
+                      {acc.message_access_enabled ? (
+                        <Badge type="success">✓ DM enabled</Badge>
+                      ) : (
+                        <button
+                          onClick={() => handleEnableMessageAccess(acc)}
+                          style={enableDmBtn}
+                        >
+                          Enable DM →
+                        </button>
                       )}
                       <button
                         onClick={() => handleDisconnect(acc.id)}
-                        style={{
-                          background: 'none', border: 'none', color: 'var(--text-muted)',
-                          fontSize: 12, cursor: 'pointer', padding: '4px 8px',
-                          borderRadius: 6, transition: 'color 0.15s',
-                        }}
-                        onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
+                        style={disconnectStyle}
+                        onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
                         onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
-                      >
-                        Disconnect
-                      </button>
+                      >Disconnect</button>
                     </div>
                   </div>
                 ))}
@@ -449,50 +147,62 @@ export default function ConnectPage() {
             </div>
           )}
 
-          {/* ═══════════════════════════════════════════════════════════════ */}
-          {/* CONNECT NEW (when NOT in picker mode)                         */}
-          {/* ═══════════════════════════════════════════════════════════════ */}
-          {!showPicker && (
-            <div style={{
-              background: 'var(--bg-surface)', border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-lg)', padding: 32, marginBottom: 28,
-            }}>
-              <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 700, marginBottom: 12 }}>
-                {connectedAccounts.length > 0 ? 'Add another account' : 'Link your Instagram Business account'}
-              </h3>
-              <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 24, lineHeight: 1.6 }}>
-                You'll be redirected to Meta to authorize access, then you'll choose which account to connect.
-              </p>
-              <button
-                onClick={handleStartOAuth}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  background: 'linear-gradient(135deg, #e1306c, #833ab4)',
-                  border: 'none', color: '#fff', padding: '14px 28px',
-                  borderRadius: 'var(--radius)', fontSize: 15, fontWeight: 600,
-                  cursor: 'pointer', fontFamily: 'var(--font-body)',
-                  width: '100%', justifyContent: 'center',
-                }}
-              >
-                <InstagramIcon />
-                Connect with Instagram
-              </button>
+          {/* ═══ Connect Instagram Button ═══ */}
+          <div style={connectPanel}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+              <div style={igIconWrapper}>
+                <InstagramIcon size={28} />
+              </div>
+              <div>
+                <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 700, margin: 0 }}>
+                  {connectedAccounts.length > 0 ? 'Add another account' : 'Connect Instagram'}
+                </h3>
+                <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '4px 0 0' }}>
+                  Log in directly with your Instagram account
+                </p>
+              </div>
             </div>
-          )}
 
-          {/* Requirements */}
-          <div style={{
-            background: 'var(--bg-surface)', border: '1px solid var(--border)',
-            borderRadius: 'var(--radius)', padding: 24,
-          }}>
+            <div style={stepsContainer}>
+              <Step num={1} text="Click 'Connect via Instagram' below" />
+              <Step num={2} text="Log in with your Instagram credentials" />
+              <Step num={3} text="Authorize ChatIQ to manage messages and comments" />
+              <Step num={4} text="Enable message access when prompted" />
+            </div>
+
+            <button onClick={handleConnect} style={connectBtn}>
+              <InstagramIcon size={20} />
+              Connect via Instagram
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', marginTop: 14 }}>
+              <MetaIcon />
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                Powered by Meta Business Tools
+              </span>
+            </div>
+          </div>
+
+          {/* ═══ Requirements ═══ */}
+          <div style={requirementsBox}>
             <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--text-secondary)' }}>
               Requirements
             </h4>
             {REQUIREMENTS.map((r, i) => (
-              <div key={i} style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-                <span style={{ color: 'var(--success)', flexShrink: 0 }}>✓</span>
+              <div key={i} style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+                <span style={{ color: 'var(--success)', flexShrink: 0, fontSize: 14 }}>✓</span>
                 <span style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{r}</span>
               </div>
+            ))}
+          </div>
+
+          {/* ═══ FAQ ═══ */}
+          <div style={{ marginTop: 20 }}>
+            <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--text-secondary)' }}>
+              Common Questions
+            </h4>
+            {FAQ.map((item, i) => (
+              <FaqItem key={i} question={item.q} answer={item.a} />
             ))}
           </div>
         </div>
@@ -501,14 +211,61 @@ export default function ConnectPage() {
   );
 }
 
-// ── Shared Components ────────────────────────────────────────────────────────
+// ═══ Sub-components ══════════════════════════════════════════════════════════
+
+function Step({ num, text }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={stepDot}>{num}</div>
+      <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{text}</span>
+    </div>
+  );
+}
+
+function FaqItem({ question, answer }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{
+      borderBottom: '1px solid var(--border)', paddingBottom: 12, marginBottom: 12,
+    }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          background: 'none', border: 'none', color: 'var(--text-primary)',
+          fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: 0,
+          fontFamily: 'var(--font-body)', textAlign: 'left', width: '100%',
+        }}
+      >
+        {open ? '▼' : '▶'} {question}
+      </button>
+      {open && (
+        <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '8px 0 0 20px', lineHeight: 1.6 }}>
+          {answer}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Badge({ type, children }) {
+  const colors = {
+    success: { bg: 'rgba(34,211,165,0.1)', fg: 'var(--success)', bd: 'rgba(34,211,165,0.2)' },
+    warning: { bg: 'rgba(245,158,11,0.1)', fg: '#f59e0b', bd: 'rgba(245,158,11,0.2)' },
+  };
+  const c = colors[type] || colors.success;
+  return (
+    <span style={{
+      fontSize: 11, padding: '3px 10px', borderRadius: 20,
+      background: c.bg, color: c.fg, border: `1px solid ${c.bd}`,
+    }}>{children}</span>
+  );
+}
 
 function Logo() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
       <div style={{
-        width: 32, height: 32,
-        background: 'linear-gradient(135deg, var(--accent), var(--accent-2))',
+        width: 32, height: 32, background: 'linear-gradient(135deg, var(--accent), var(--accent-2))',
         borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontFamily: 'var(--font-display)', fontWeight: 800, color: '#fff', fontSize: 16,
       }}>C</div>
@@ -517,77 +274,128 @@ function Logo() {
   );
 }
 
-function InstagramIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
-    </svg>
-  );
-}
-
-function AccountAvatar({ url }) {
+function AccountAvatar({ url, username }) {
   return (
     <div style={{
       width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
       background: 'linear-gradient(135deg, var(--accent), var(--accent-2))',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: 20, overflow: 'hidden',
+      fontSize: 18, overflow: 'hidden', color: '#fff', fontWeight: 700,
     }}>
-      {url ? <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '📷'}
-    </div>
-  );
-}
-
-function RadioDot({ selected }) {
-  return (
-    <div style={{
-      width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
-      border: selected ? '2px solid var(--accent)' : '2px solid var(--border)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      transition: 'all 0.15s',
-    }}>
-      {selected && (
-        <div style={{ width: 12, height: 12, borderRadius: '50%', background: 'var(--accent)' }} />
+      {url ? (
+        <img src={url} alt={username} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      ) : (
+        (username || '?')[0].toUpperCase()
       )}
     </div>
   );
 }
 
-// ── Constants ────────────────────────────────────────────────────────────────
+function InstagramIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
+    </svg>
+  );
+}
 
-const SETUP_STEPS = [
-  {
-    title: 'Switch to a Business or Creator account',
-    description: 'Open Instagram → Settings → Account → Switch to Professional Account. Choose "Business" or "Creator".',
-  },
-  {
-    title: 'Create or use a Facebook Page',
-    description: 'Go to facebook.com/pages/create and create a Page for your business. If you already have one, skip this step.',
-  },
-  {
-    title: 'Link Instagram to your Facebook Page',
-    description: 'On your Facebook Page, go to Settings → Linked Accounts (or Professional dashboard → Linked accounts) → Connect Instagram. Log in and authorize.',
-  },
-  {
-    title: 'Grant permissions during OAuth',
-    description: 'When you click "Connect with Instagram" here, Facebook will ask which Pages to grant access to. Make sure you check ALL the Pages you want ChatIQ to see — including the one you just linked.',
-  },
-  {
-    title: 'Re-authorize in ChatIQ',
-    description: 'Click the "Re-authorize with Facebook" button below to refresh and see your newly linked account.',
-  },
-];
+function MetaIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 36 36" fill="none">
+      <path d="M6.1 16.5c0-2.4.7-4.6 1.8-5.9 1-1.1 2.2-1.7 3.5-1.7 1.7 0 2.9.7 4 2.3l.7 1 .7-1c1-1.5 2.3-2.3 4-2.3 1.3 0 2.5.6 3.5 1.7 1.2 1.3 1.8 3.5 1.8 5.9 0 5.8-5.5 11.4-10 14.2-4.5-2.8-10-8.4-10-14.2z" fill="var(--text-muted)" fillOpacity="0.5"/>
+    </svg>
+  );
+}
+
+// ═══ Constants ═══════════════════════════════════════════════════════════════
 
 const REQUIREMENTS = [
   'Instagram Business or Creator account (not personal)',
-  'Facebook Page connected to your Instagram account',
-  'Admin access to the Facebook Page',
-  'Grant access to all relevant Pages during the Facebook login',
+  'You\'ll log in directly with your Instagram — no Facebook Page needed',
+  'Allow message access in Instagram settings when prompted',
 ];
+
+const FAQ = [
+  {
+    q: 'Do I need a Facebook Page?',
+    a: 'No! With Instagram Login, you connect directly with your Instagram account. No Facebook Page is required.',
+  },
+  {
+    q: 'What if I have a personal Instagram account?',
+    a: 'You\'ll need to switch to a Business or Creator account first. Go to Instagram → Settings → Account type and tools → Switch to Professional account.',
+  },
+  {
+    q: 'What permissions does ChatIQ need?',
+    a: 'ChatIQ needs permission to read comments, manage messages, and view your basic profile info. You\'ll authorize these during the Instagram login.',
+  },
+  {
+    q: 'Is my data safe?',
+    a: 'Yes. ChatIQ only accesses the permissions you explicitly grant. We never post on your behalf without your setup.',
+  },
+];
+
+// ═══ Styles ══════════════════════════════════════════════════════════════════
+
+const pageStyle = {
+  minHeight: '100vh', background: 'var(--bg-base)',
+  display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 24px',
+};
+
+const titleStyle = {
+  fontFamily: 'var(--font-display)', fontSize: 36, fontWeight: 800, marginBottom: 10,
+};
+
+const subtitleStyle = {
+  color: 'var(--text-secondary)', fontSize: 16, marginBottom: 40, lineHeight: 1.6,
+};
 
 const sectionLabel = {
   fontSize: 13, fontWeight: 600, color: 'var(--text-muted)',
   textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12,
+};
+
+const accountCard = {
+  display: 'flex', alignItems: 'center', gap: 14,
+  padding: '14px 18px', borderRadius: 'var(--radius)',
+  background: 'var(--bg-surface)', border: '1px solid var(--border)',
+};
+
+const connectPanel = {
+  background: 'var(--bg-surface)', border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-lg)', padding: 28, marginBottom: 24,
+};
+
+const igIconWrapper = {
+  width: 50, height: 50, borderRadius: 14, flexShrink: 0,
+  background: 'linear-gradient(135deg, #f9ce34, #ee2a7b, #6228d7)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
+};
+
+const stepsContainer = {
+  display: 'flex', flexDirection: 'column', gap: 10,
+  marginBottom: 20, padding: '16px 18px',
+  background: 'var(--bg-base)', borderRadius: 'var(--radius)',
+};
+
+const stepDot = {
+  width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+  background: 'var(--accent)', color: '#fff',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  fontSize: 11, fontWeight: 700,
+};
+
+const connectBtn = {
+  width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+  background: 'linear-gradient(135deg, #e1306c, #833ab4)', border: 'none', color: '#fff',
+  padding: '14px 28px', borderRadius: 'var(--radius)', fontSize: 15, fontWeight: 600,
+  cursor: 'pointer', fontFamily: 'var(--font-body)', transition: 'all 0.2s',
+};
+
+const enableDmBtn = {
+  fontSize: 11, padding: '3px 10px', borderRadius: 20,
+  background: 'rgba(232,67,147,0.1)', color: 'var(--accent)',
+  border: '1px solid rgba(232,67,147,0.2)', cursor: 'pointer',
+  fontFamily: 'var(--font-body)', fontWeight: 600,
 };
 
 const ghostBtn = {
@@ -595,4 +403,15 @@ const ghostBtn = {
   color: 'var(--text-secondary)', padding: '10px 18px',
   borderRadius: 'var(--radius-sm)', fontSize: 13, cursor: 'pointer',
   fontFamily: 'var(--font-body)',
+};
+
+const disconnectStyle = {
+  background: 'none', border: 'none', color: 'var(--text-muted)',
+  fontSize: 12, cursor: 'pointer', padding: '4px 8px', borderRadius: 6,
+  transition: 'color 0.15s',
+};
+
+const requirementsBox = {
+  background: 'var(--bg-surface)', border: '1px solid var(--border)',
+  borderRadius: 'var(--radius)', padding: 24,
 };

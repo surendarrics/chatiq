@@ -5,77 +5,84 @@ const { v4: uuidv4 } = require('uuid');
 const router = express.Router();
 
 const supabase = require('../utils/supabase');
-const instagramApi = require('../services/instagramApi');
 const logger = require('../utils/logger');
 
-const META_AUTH_URL = 'https://www.facebook.com/v19.0/dialog/oauth';
-const META_TOKEN_URL = 'https://graph.facebook.com/v19.0/oauth/access_token';
-const GRAPH_API_BASE = 'https://graph.facebook.com/v19.0';
+// ═════════════════════════════════════════════════════════════════════════════
+// Instagram Login API endpoints (NOT Facebook Login)
+// This gives direct Instagram auth — no Facebook Page needed.
+// Same approach as ManyChat, Later, etc.
+// ═════════════════════════════════════════════════════════════════════════════
+const IG_AUTH_URL = 'https://www.instagram.com/oauth/authorize';
+const IG_TOKEN_URL = 'https://api.instagram.com/oauth/access_token';
+const IG_GRAPH_BASE = 'https://graph.instagram.com';
+
+// Instagram Business Login permissions (different from Facebook Login permissions)
+const IG_SCOPES = [
+  'instagram_business_basic',
+  'instagram_business_manage_messages',
+  'instagram_business_manage_comments',
+].join(',');
 
 // ── Build the redirect URI with safety fallback ──────────────────────────────
-// If INSTAGRAM_REDIRECT_URI is set and contains the full callback path, use it.
-// Otherwise, auto-construct it from the request host at runtime.
 const CALLBACK_PATH = '/api/auth/instagram/callback';
 
 function getRedirectUri(req) {
   const envUri = process.env.INSTAGRAM_REDIRECT_URI;
-  // Use the env var if it has the full callback path
   if (envUri && envUri.includes(CALLBACK_PATH)) {
     return envUri;
   }
-  // Fallback: construct from request host (works on Railway, localhost, etc.)
   const protocol = req.headers['x-forwarded-proto'] || req.protocol;
   const host = req.headers['x-forwarded-host'] || req.get('host');
   const constructed = `${protocol}://${host}${CALLBACK_PATH}`;
-  logger.warn(`⚠️ INSTAGRAM_REDIRECT_URI env var missing or invalid ("${envUri}"), using: ${constructed}`);
+  logger.warn(`⚠️ INSTAGRAM_REDIRECT_URI missing or invalid ("${envUri}"), using: ${constructed}`);
   return constructed;
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// INSTAGRAM AUTH ROUTES
+// ═════════════════════════════════════════════════════════════════════════════
+
 /**
  * GET /api/auth/instagram
- * Redirects the browser to Meta's OAuth login page.
- * Frontend just does: window.location.href = "${BACKEND_URL}/api/auth/instagram"
+ * Redirects the browser to Instagram's OAuth login page.
+ * User logs in with their Instagram credentials directly (like ManyChat).
+ * No Facebook Page required.
  */
 router.get('/instagram', (req, res) => {
   const redirectUri = getRedirectUri(req);
-  logger.info('🔗 GET /api/auth/instagram — redirecting to Facebook OAuth');
+  logger.info('🔗 GET /api/auth/instagram — redirecting to Instagram OAuth');
   logger.info(`  Redirect URI: ${redirectUri}`);
   logger.info(`  App ID: ${process.env.META_APP_ID}`);
+  logger.info(`  Scopes: ${IG_SCOPES}`);
 
-  const state = uuidv4();
   const params = new URLSearchParams({
+    enable_fb_login: '0',           // Only show Instagram login (not Facebook)
+    force_authentication: '1',      // Always show login screen
     client_id: process.env.META_APP_ID,
     redirect_uri: redirectUri,
-    scope: [
-      'instagram_basic',
-      'instagram_manage_comments',
-      'instagram_manage_messages',
-      'pages_show_list',
-      'pages_read_engagement',
-      'pages_manage_metadata',
-    ].join(','),
     response_type: 'code',
-    state,
+    scope: IG_SCOPES,
   });
 
-  const authUrl = `${META_AUTH_URL}?${params.toString()}`;
-  logger.info(`  Redirecting to: ${authUrl.substring(0, 100)}...`);
+  const authUrl = `${IG_AUTH_URL}?${params.toString()}`;
+  logger.info(`  Redirecting to: ${authUrl.substring(0, 120)}...`);
   res.redirect(authUrl);
 });
 
 /**
  * GET /api/auth/instagram/callback
- * Handle Meta OAuth callback — exchange code, fetch available accounts,
- * and redirect to frontend account picker (does NOT auto-connect).
+ * Handle Instagram OAuth callback — exchange code, get profile, auto-connect.
+ * Flow: Instagram login → exchange code → get profile → save to DB → redirect with JWT.
+ * NO account picker needed — the user already logged in with a specific IG account.
  */
 router.get('/instagram/callback', async (req, res) => {
   logger.info('🔁 GET /api/auth/instagram/callback — OAuth callback received');
   logger.info(`  Query params: ${JSON.stringify(req.query)}`);
 
-  const { code, error } = req.query;
+  const { code, error, error_reason } = req.query;
 
   if (error) {
-    logger.warn('OAuth error from Meta:', error, req.query.error_description);
+    logger.warn('OAuth error from Instagram:', error, error_reason);
     return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=oauth_denied`);
   }
 
@@ -85,113 +92,97 @@ router.get('/instagram/callback', async (req, res) => {
   }
 
   try {
-    // ─── Step 1: Exchange code for short-lived user access token ───
     const redirectUri = getRedirectUri(req);
-    logger.info(`Step 1: Exchanging code for short-lived token (redirect_uri: ${redirectUri})...`);
-    const tokenResponse = await axios.get(META_TOKEN_URL, {
-      params: {
+
+    // ─── Step 1: Exchange code for short-lived access token ───
+    // Instagram uses POST with form-encoded body (NOT GET like Facebook)
+    logger.info('Step 1: Exchanging code for short-lived token...');
+    const tokenResponse = await axios.post(IG_TOKEN_URL,
+      new URLSearchParams({
         client_id: process.env.META_APP_ID,
         client_secret: process.env.META_APP_SECRET,
+        grant_type: 'authorization_code',
         redirect_uri: redirectUri,
         code,
-      },
-    });
+      }).toString(),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
 
     const shortLivedToken = tokenResponse.data.access_token;
-    logger.info('Got short-lived token');
+    const igUserId = tokenResponse.data.user_id;
+    logger.info(`Got short-lived token for IG user: ${igUserId}`);
 
-    // ─── Step 2: Exchange for long-lived user access token ───
+    // ─── Step 2: Exchange for long-lived token (60 days) ───
     logger.info('Step 2: Exchanging for long-lived token...');
-    const longLivedResponse = await axios.get(`${GRAPH_API_BASE}/oauth/access_token`, {
+    const longLivedResponse = await axios.get(`${IG_GRAPH_BASE}/access_token`, {
       params: {
-        grant_type: 'fb_exchange_token',
-        client_id: process.env.META_APP_ID,
+        grant_type: 'ig_exchange_token',
         client_secret: process.env.META_APP_SECRET,
-        fb_exchange_token: shortLivedToken,
+        access_token: shortLivedToken,
       },
     });
 
-    const longLivedUserToken = longLivedResponse.data.access_token;
-    logger.info('Got long-lived user token');
+    const longLivedToken = longLivedResponse.data.access_token;
+    const expiresIn = longLivedResponse.data.expires_in; // seconds
+    logger.info(`Got long-lived token (expires in ${Math.round(expiresIn / 86400)} days)`);
 
-    // ─── Step 3: Get Facebook user info ───
-    logger.info('Step 3: Fetching Facebook user info...');
-    const meResponse = await axios.get(`${GRAPH_API_BASE}/me`, {
-      params: { fields: 'id,name,email', access_token: longLivedUserToken },
-    });
-    const fbUser = meResponse.data;
-    logger.info(`Facebook user: ${fbUser.name} (${fbUser.id})`);
-
-    // ─── Step 4: Get user's Facebook Pages ───
-    logger.info('Step 4: Fetching Facebook Pages...');
-    const pagesResponse = await axios.get(`${GRAPH_API_BASE}/me/accounts`, {
+    // ─── Step 3: Get Instagram user profile ───
+    logger.info('Step 3: Fetching Instagram profile...');
+    const profileResponse = await axios.get(`${IG_GRAPH_BASE}/me`, {
       params: {
-        fields: 'id,name,access_token,instagram_business_account',
-        access_token: longLivedUserToken,
+        fields: 'user_id,username,name,account_type,profile_picture_url,followers_count',
+        access_token: longLivedToken,
       },
     });
 
-    const pages = pagesResponse.data.data || [];
-    logger.info(`Found ${pages.length} Facebook Page(s)`);
+    const profile = profileResponse.data;
+    logger.info(`Instagram profile: @${profile.username} (${profile.account_type}), ${profile.followers_count || 0} followers`);
 
-    if (pages.length === 0) {
-      logger.warn('No Facebook Pages found');
-      return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=no_pages`);
+    // ─── Step 4: Upsert user in database ───
+    // Use Instagram user_id as identifier (stored in facebook_id column for compatibility)
+    logger.info('Step 4: Upserting user...');
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .upsert({
+        facebook_id: String(profile.user_id),
+        name: profile.name || profile.username,
+        email: `ig_${profile.user_id}@instagram.local`,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'facebook_id' })
+      .select()
+      .single();
+
+    if (userError) {
+      logger.error('User upsert error:', userError);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=db_error`);
     }
+    logger.info(`User upserted: ${user.id}`);
 
-    // ─── Step 5: Fetch IG profile for EACH page ───
-    // Include ALL pages so the frontend can show which ones have IG linked and which don't
-    logger.info('Step 5: Fetching Instagram profiles...');
-    const availableAccounts = [];
-    const pagesWithoutIG = [];
+    // ─── Step 5: Save Instagram account ───
+    logger.info('Step 5: Saving Instagram account...');
+    await supabase
+      .from('instagram_accounts')
+      .upsert({
+        user_id: user.id,
+        ig_account_id: String(profile.user_id),
+        username: profile.username || '',
+        profile_picture_url: profile.profile_picture_url || '',
+        followers_count: profile.followers_count || 0,
+        access_token: longLivedToken,
+        token_expires_at: new Date(Date.now() + (expiresIn || 5184000) * 1000).toISOString(),
+        updated_at: new Date().toISOString(),
+        // page_id and page_access_token are null — not needed with Instagram Login
+      }, { onConflict: 'ig_account_id' })
+      .select();
 
-    for (const page of pages) {
-      if (page.instagram_business_account) {
-        const igId = page.instagram_business_account.id;
-        let profile = {};
-        try {
-          const profileRes = await axios.get(`${GRAPH_API_BASE}/${igId}`, {
-            params: {
-              fields: 'id,username,profile_picture_url,followers_count',
-              access_token: page.access_token,
-            },
-          });
-          profile = profileRes.data;
-        } catch (e) {
-          logger.warn(`⚠️ Failed to fetch IG profile for ${igId}:`, e.message);
-        }
+    logger.info(`✅ Saved IG account: @${profile.username}`);
 
-        availableAccounts.push({
-          pageId: page.id,
-          pageName: page.name,
-          instagramId: igId,
-          username: profile.username || '',
-          profilePictureUrl: profile.profile_picture_url || '',
-          followersCount: profile.followers_count || 0,
-        });
-      } else {
-        // Page without Instagram linked — include so user can see it's missing
-        pagesWithoutIG.push({
-          pageId: page.id,
-          pageName: page.name,
-        });
-      }
-    }
+    // ─── Step 6: Generate JWT and redirect to frontend ───
+    const jwtToken = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    logger.info('✅ Auth flow complete — redirecting to frontend');
 
-    logger.info(`Found ${availableAccounts.length} IG account(s), ${pagesWithoutIG.length} page(s) without IG`);
-
-    // ─── Step 6: Create a short-lived session JWT with all the data ───
-    const sessionToken = jwt.sign({
-      type: 'oauth_session',
-      fbUser: { id: fbUser.id, name: fbUser.name, email: fbUser.email },
-      longLivedUserToken,
-      accounts: availableAccounts,
-      pagesWithoutIG,
-    }, process.env.JWT_SECRET, { expiresIn: '10m' }); // 10 minutes to pick
-
-    // ─── Step 7: Redirect to frontend account picker ───
-    logger.info('Redirecting to frontend account picker');
-    res.redirect(`${process.env.FRONTEND_URL}/connect?session=${sessionToken}`);
+    // Redirect to /auth/callback with token — auto-connects, no picker needed
+    res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${jwtToken}`);
 
   } catch (err) {
     logger.error('❌ OAuth callback error:', {
@@ -204,137 +195,10 @@ router.get('/instagram/callback', async (req, res) => {
   }
 });
 
-/**
- * POST /api/auth/instagram/select
- * User picked ONE account from the list — save it to DB and return auth JWT.
- * Body: { sessionToken, pageId, instagramId }
- */
-router.post('/instagram/select', async (req, res) => {
-  const { sessionToken, pageId, instagramId } = req.body;
 
-  if (!sessionToken || !pageId || !instagramId) {
-    return res.status(400).json({ error: 'Missing sessionToken, pageId, or instagramId' });
-  }
-
-  try {
-    // ─── Step 1: Verify session JWT ───
-    const session = jwt.verify(sessionToken, process.env.JWT_SECRET);
-    if (session.type !== 'oauth_session') {
-      return res.status(400).json({ error: 'Invalid session token type' });
-    }
-
-    logger.info(`📥 POST /instagram/select — user: ${session.fbUser.name}, selected IG: ${instagramId}`);
-
-    // ─── Step 2: Find the selected account in session data ───
-    const selected = session.accounts.find(
-      a => a.pageId === pageId && a.instagramId === instagramId
-    );
-    if (!selected) {
-      return res.status(400).json({ error: 'Selected account not found in session' });
-    }
-
-    // ─── Step 3: Upsert user ───
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .upsert({
-        facebook_id: session.fbUser.id,
-        email: session.fbUser.email || `${session.fbUser.id}@facebook.com`,
-        name: session.fbUser.name,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'facebook_id' })
-      .select()
-      .single();
-
-    if (userError) {
-      logger.error('User upsert error:', userError);
-      return res.status(500).json({ error: 'Database error creating user' });
-    }
-
-    logger.info(`User upserted: ${user.id}`);
-
-    // ─── Step 4: Get the page access token from Graph API ───
-    // We re-fetch because the session token data doesn't store page access tokens
-    const pagesResponse = await axios.get(`${GRAPH_API_BASE}/me/accounts`, {
-      params: {
-        fields: 'id,name,access_token,instagram_business_account',
-        access_token: session.longLivedUserToken,
-      },
-    });
-    const page = (pagesResponse.data.data || []).find(p => p.id === pageId);
-    if (!page) {
-      return res.status(400).json({ error: 'Facebook page not found. Please reconnect.' });
-    }
-
-    // ─── Step 5: Save the selected Instagram account ───
-    const igProfile = await axios.get(`${GRAPH_API_BASE}/${instagramId}`, {
-      params: {
-        fields: 'id,username,profile_picture_url,followers_count',
-        access_token: page.access_token,
-      },
-    });
-
-    await supabase
-      .from('instagram_accounts')
-      .upsert({
-        user_id: user.id,
-        ig_account_id: instagramId,
-        page_id: pageId,
-        page_name: page.name,
-        page_access_token: page.access_token,
-        username: igProfile.data.username || '',
-        profile_picture_url: igProfile.data.profile_picture_url || '',
-        followers_count: igProfile.data.followers_count || 0,
-        access_token: session.longLivedUserToken,
-        token_expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'ig_account_id' })
-      .select();
-
-    logger.info(`✅ Saved IG account: @${igProfile.data.username} (page: ${page.name})`);
-
-    // ─── Step 6: Subscribe page to webhooks ───
-    try {
-      await axios.post(
-        `${GRAPH_API_BASE}/${pageId}/subscribed_apps`,
-        null,
-        { params: { subscribed_fields: 'feed', access_token: page.access_token } }
-      );
-      logger.info(`✅ Page ${pageId} subscribed to webhooks`);
-    } catch (subErr) {
-      logger.warn(`⚠️ Webhook subscription failed for page ${pageId}:`, subErr.response?.data || subErr.message);
-    }
-
-    // ─── Step 7: Generate auth JWT ───
-    const jwtToken = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
-
-    logger.info(`✅ /instagram/select complete — @${igProfile.data.username} connected`);
-
-    res.json({
-      success: true,
-      token: jwtToken,
-      account: {
-        instagramId,
-        username: igProfile.data.username,
-        pageName: page.name,
-        pageId,
-        profilePictureUrl: igProfile.data.profile_picture_url || '',
-        followersCount: igProfile.data.followers_count || 0,
-      },
-    });
-
-  } catch (err) {
-    if (err.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Session expired. Please reconnect Instagram.' });
-    }
-    logger.error('❌ /instagram/select error:', {
-      message: err.message,
-      responseData: err.response?.data,
-    });
-    res.status(500).json({
-      error: err.response?.data?.error?.message || 'Failed to connect selected account.',
-    });
-  }
-});
+// ═════════════════════════════════════════════════════════════════════════════
+// GENERAL AUTH ROUTES (unchanged)
+// ═════════════════════════════════════════════════════════════════════════════
 
 /**
  * POST /api/auth/refresh
@@ -388,160 +252,6 @@ router.get('/me', async (req, res) => {
  */
 router.post('/logout', (req, res) => {
   res.json({ success: true });
-});
-
-/**
- * POST /api/auth/instagram/connect
- * Receives access token from FB SDK login (client-side), processes it server-side.
- * This is the endpoint for Meta App Review — reviewers connect their own IG account.
- */
-router.post('/instagram/connect', async (req, res) => {
-  const { accessToken } = req.body;
-
-  if (!accessToken) {
-    logger.warn('❌ /instagram/connect — missing accessToken in request body');
-    return res.status(400).json({ error: 'Missing accessToken' });
-  }
-
-  logger.info('📥 /instagram/connect — received token from FB SDK');
-  logger.info(`  Token preview: ${accessToken.substring(0, 20)}...`);
-  logger.info(`  App ID: ${process.env.META_APP_ID}`);
-
-  try {
-    // ─── Step 1: Exchange for long-lived token ───
-    const llRes = await axios.get(`${GRAPH_API_BASE}/oauth/access_token`, {
-      params: {
-        grant_type: 'fb_exchange_token',
-        client_id: process.env.META_APP_ID,
-        client_secret: process.env.META_APP_SECRET,
-        fb_exchange_token: accessToken,
-      },
-    });
-    const longLivedToken = llRes.data.access_token;
-    logger.info('✅ Got long-lived token');
-
-    // ─── Step 2: Get Facebook user info ───
-    const fbUser = await axios.get(`${GRAPH_API_BASE}/me`, {
-      params: { fields: 'id,name,email', access_token: longLivedToken },
-    });
-    logger.info(`✅ FB User: ${fbUser.data.name} (${fbUser.data.id})`);
-
-    // ─── Step 3: Upsert user in DB ───
-    const { data: user } = await supabase
-      .from('users')
-      .upsert({
-        facebook_id: fbUser.data.id,
-        name: fbUser.data.name,
-        email: fbUser.data.email || null,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'facebook_id' })
-      .select()
-      .single();
-
-    logger.info(`✅ User upserted: ${user.id}`);
-
-    // ─── Step 4: Get Facebook Pages ───
-    const pagesRes = await axios.get(`${GRAPH_API_BASE}/me/accounts`, {
-      params: {
-        fields: 'id,name,access_token,instagram_business_account',
-        access_token: longLivedToken,
-      },
-    });
-
-    const pagesWithIG = (pagesRes.data.data || []).filter(
-      (p) => p.instagram_business_account
-    );
-
-    logger.info(`📄 Found ${pagesRes.data.data?.length || 0} pages, ${pagesWithIG.length} with IG`);
-
-    if (pagesWithIG.length === 0) {
-      return res.status(400).json({
-        error: 'No Instagram Business Account found linked to your Facebook Pages. Make sure your Instagram is a Professional (Business/Creator) account connected to a Facebook Page.',
-      });
-    }
-
-    // ─── Step 5: Save each Instagram Business Account ───
-    const connectedAccounts = [];
-
-    for (const page of pagesWithIG) {
-      const igAccountId = page.instagram_business_account.id;
-      const pageAccessToken = page.access_token;
-
-      // Get Instagram profile
-      let profile = {};
-      try {
-        const profileRes = await axios.get(`${GRAPH_API_BASE}/${igAccountId}`, {
-          params: {
-            fields: 'id,username,profile_picture_url,followers_count',
-            access_token: pageAccessToken,
-          },
-        });
-        profile = profileRes.data;
-      } catch (e) {
-        logger.warn(`⚠️ Failed to fetch IG profile for ${igAccountId}:`, e.message);
-      }
-
-      await supabase
-        .from('instagram_accounts')
-        .upsert({
-          user_id: user.id,
-          ig_account_id: igAccountId,
-          page_id: page.id,
-          page_name: page.name,
-          page_access_token: pageAccessToken,
-          username: profile.username || '',
-          profile_picture_url: profile.profile_picture_url || '',
-          followers_count: profile.followers_count || 0,
-          access_token: longLivedToken,
-          token_expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'ig_account_id' })
-        .select();
-
-      logger.info(`✅ Saved IG account: @${profile.username} (page: ${page.name})`);
-
-      // Subscribe page to webhooks
-      try {
-        await axios.post(
-          `${GRAPH_API_BASE}/${page.id}/subscribed_apps`,
-          null,
-          { params: { subscribed_fields: 'feed', access_token: pageAccessToken } }
-        );
-        logger.info(`✅ Page ${page.id} subscribed to webhooks`);
-      } catch (subErr) {
-        logger.warn(`⚠️ Webhook subscription failed for page ${page.id}:`, subErr.response?.data || subErr.message);
-      }
-
-      connectedAccounts.push({
-        igAccountId,
-        username: profile.username || igAccountId,
-        pageName: page.name,
-        pageId: page.id,
-      });
-    }
-
-    // ─── Step 6: Generate JWT ───
-    const jwtToken = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '7d' });
-
-    logger.info(`✅ /instagram/connect complete — ${connectedAccounts.length} account(s) connected`);
-
-    res.json({
-      success: true,
-      token: jwtToken,
-      accounts: connectedAccounts,
-    });
-
-  } catch (err) {
-    logger.error('❌ /instagram/connect error:', {
-      message: err.message,
-      responseData: err.response?.data,
-      responseStatus: err.response?.status,
-      url: err.config?.url,
-    });
-    res.status(500).json({
-      error: err.response?.data?.error?.message || 'Failed to connect Instagram account.',
-    });
-  }
 });
 
 module.exports = router;
