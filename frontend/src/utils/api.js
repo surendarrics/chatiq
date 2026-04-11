@@ -56,6 +56,8 @@ export default api;
 // The backend will redirect the browser to Facebook OAuth automatically.
 export const authApi = {
   getInstagramAuthUrl: () => `${API_URL}/api/auth/instagram`,
+  selectAccount: (sessionToken, pageId, instagramId) =>
+    api.post('/api/auth/instagram/select', { sessionToken, pageId, instagramId }),
   getMe: () => api.get('/api/auth/me'),
   logout: () => api.post('/api/auth/logout'),
   refreshToken: (token) => api.post('/api/auth/refresh', { token }),

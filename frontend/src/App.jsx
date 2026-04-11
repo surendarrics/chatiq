@@ -48,7 +48,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
-          <Route path="/connect" element={<ProtectedRoute><ConnectPage /></ProtectedRoute>} />
+          <Route path="/connect" element={<ConnectPage />} />
           <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/automations" element={<AutomationsPage />} />
