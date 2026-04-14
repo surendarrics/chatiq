@@ -213,16 +213,19 @@ async function validateToken(accessToken) {
   }
 }
 
-/**
- * Subscribe account to webhook events
- * Supports both Instagram Login AND Facebook Login
- */
 async function subscribePageToWebhook(account) {
   const isIgLogin = !account.page_id || account.page_id === '';
   const token = isIgLogin ? account.access_token : account.page_access_token;
   const targetId = isIgLogin ? account.ig_account_id : account.page_id;
   const apiBase = isIgLogin ? IG_GRAPH_BASE : FB_GRAPH_BASE;
   const fields = isIgLogin ? 'comments,messages' : 'feed,comments,messages,message_reactions';
+
+  // For Instagram Login, subscribing an app is handled exclusively in the Meta App Dashboard under Instagram.
+  // There is no /subscribed_apps endpoint for Instagram user IDs.
+  if (isIgLogin) {
+    logger.info(`ℹ️ IG Login account detected (@${account.username}). Skipping /subscribed_apps API call; Webhooks configure automatically if App Dashboard is set up.`);
+    return { success: true, method: 'app_dashboard_only' };
+  }
 
   try {
     const response = await axios.post(

@@ -32,6 +32,34 @@ router.get('/instagram', (req, res) => {
 //  - Facebook Page Webhooks (object: "page", field: "feed" with item: "comment")
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 router.post('/instagram', async (req, res) => {
+  // ── IMPORTANT: Verify Meta Webhook Signature (OWASP Security) ──
+  const signature = req.headers['x-hub-signature-256'];
+  if (!signature) {
+    console.warn('❌ Webhook missing signature');
+    return res.status(403).send('Signature missing');
+  }
+
+  // Calculate signature using raw body and app secret
+  const appSecret = process.env.META_APP_SECRET || process.env.INSTAGRAM_APP_SECRET;
+  if (!appSecret) {
+    console.warn('⚠️ Missing App Secret, skipping signature validation.');
+  } else {
+    try {
+      const hmac = crypto.createHmac('sha256', appSecret);
+      // express.raw() ensures req.body is a buffer. If it's a string, we handle it too.
+      const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || '');
+      const expectedSignature = 'sha256=' + hmac.update(rawBody).digest('hex');
+
+      if (signature !== expectedSignature) {
+        console.warn('❌ Webhook signature mismatch. Expected:', expectedSignature, 'Got:', signature);
+        return res.status(403).send('Signature mismatch');
+      }
+    } catch (e) {
+      console.error('❌ Failed to validate signature:', e.message);
+      return res.status(500).send('Signature validation error');
+    }
+  }
+
   // ALWAYS return 200 immediately — Meta will retry if you don't
   res.sendStatus(200);
 
@@ -144,6 +172,12 @@ async function handleComment(entryId, value, source) {
     return;
   }
 
+  // ── Do not reply to our own comments (avoids infinite loops/DOS) ──
+  if (String(commenterId) === String(account.ig_account_id)) {
+    console.log(`⏭️ Skipping comment because it's from our own account (@${account.username})`);
+    return;
+  }
+
   console.log(`✅ Matched account: @${account.username} (${account.ig_account_id})`);
 
   // Pick the right token and API base depending on login type
@@ -248,7 +282,9 @@ async function handleComment(entryId, value, source) {
           dmSent = true;
         } catch (err) {
           dmError = err.response?.data?.error?.message || err.message;
-          console.error(`❌ DM FAILED:`, err.response?.data || err.message);
+          const fbErrorCode = err.response?.data?.error?.code;
+          const fbErrorSubcode = err.response?.data?.error?.error_subcode;
+          console.error(`❌ DM FAILED [Code: ${fbErrorCode}, Subcode: ${fbErrorSubcode}]:`, err.response?.data || err.message);
         }
       }
     }
