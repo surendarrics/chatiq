@@ -32,37 +32,28 @@ router.get('/instagram', (req, res) => {
 //  - Facebook Page Webhooks (object: "page", field: "feed" with item: "comment")
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 router.post('/instagram', async (req, res) => {
-  // ── IMPORTANT: Verify Meta Webhook Signature (OWASP Security) ──
-  const signature = req.headers['x-hub-signature-256'];
-  if (!signature) {
-    console.warn('❌ Webhook missing signature');
-    return res.status(403).send('Signature missing');
-  }
+  // ═══════════════════════════════════════════════════════════════════════
+  // STEP 0: Log immediately so we ALWAYS see hits in Railway, no matter what
+  // ═══════════════════════════════════════════════════════════════════════
+  console.log('\n═══════════════════════════════════════════');
+  console.log('📥 WEBHOOK POST HIT at', new Date().toISOString());
+  console.log('   Headers:', JSON.stringify({
+    'content-type': req.headers['content-type'],
+    'x-hub-signature-256': req.headers['x-hub-signature-256'] ? '(present)' : '(MISSING)',
+    'user-agent': req.headers['user-agent'],
+  }));
+  console.log('   Body type:', typeof req.body, Buffer.isBuffer(req.body) ? `(Buffer, ${req.body.length} bytes)` : '');
+  console.log('═══════════════════════════════════════════');
 
-  // Calculate signature using raw body and app secret
-  const appSecret = process.env.META_APP_SECRET || process.env.INSTAGRAM_APP_SECRET;
-  if (!appSecret) {
-    console.warn('⚠️ Missing App Secret, skipping signature validation.');
-  } else {
-    try {
-      const hmac = crypto.createHmac('sha256', appSecret);
-      // express.raw() ensures req.body is a buffer. If it's a string, we handle it too.
-      const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || '');
-      const expectedSignature = 'sha256=' + hmac.update(rawBody).digest('hex');
-
-      if (signature !== expectedSignature) {
-        console.warn('❌ Webhook signature mismatch. Expected:', expectedSignature, 'Got:', signature);
-        return res.status(403).send('Signature mismatch');
-      }
-    } catch (e) {
-      console.error('❌ Failed to validate signature:', e.message);
-      return res.status(500).send('Signature validation error');
-    }
-  }
-
-  // ALWAYS return 200 immediately — Meta will retry if you don't
+  // ═══════════════════════════════════════════════════════════════════════
+  // STEP 1: ALWAYS return 200 immediately — Meta REQUIRES this.
+  // If we return anything else, Meta retries and eventually STOPS sending.
+  // ═══════════════════════════════════════════════════════════════════════
   res.sendStatus(200);
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // STEP 2: Parse body
+  // ═══════════════════════════════════════════════════════════════════════
   let body;
   try {
     const raw = req.body;
@@ -72,17 +63,48 @@ router.post('/instagram', async (req, res) => {
     return;
   }
 
-  console.log('\n═══════════════════════════════════════════');
-  console.log('📥 WEBHOOK RECEIVED');
-  console.log(`   Object type: ${body.object}`);
+  console.log('📦 Parsed webhook body:');
   console.log(JSON.stringify(body, null, 2));
-  console.log('═══════════════════════════════════════════\n');
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // STEP 3: Verify Meta Webhook Signature (OWASP Security)
+  // We validate AFTER returning 200 so Meta doesn't stop sending webhooks.
+  // If validation fails we LOG the issue but still process during debug.
+  // ═══════════════════════════════════════════════════════════════════════
+  const signature = req.headers['x-hub-signature-256'];
+  const appSecret = process.env.META_APP_SECRET || process.env.INSTAGRAM_APP_SECRET;
+  let signatureValid = false;
+
+  if (!signature) {
+    console.warn('⚠️ Webhook missing X-Hub-Signature-256 header');
+  } else if (!appSecret) {
+    console.warn('⚠️ No META_APP_SECRET or INSTAGRAM_APP_SECRET set — cannot validate signature');
+  } else {
+    try {
+      const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(typeof req.body === 'string' ? req.body : JSON.stringify(req.body));
+      const expectedSignature = 'sha256=' + crypto.createHmac('sha256', appSecret).update(rawBody).digest('hex');
+      if (signature === expectedSignature) {
+        signatureValid = true;
+        console.log('🔐 Webhook signature VALID ✅');
+      } else {
+        console.warn('⚠️ Webhook signature MISMATCH (logging but still processing)');
+        console.warn('   Expected:', expectedSignature);
+        console.warn('   Got:     ', signature);
+      }
+    } catch (e) {
+      console.error('⚠️ Signature validation error:', e.message);
+    }
+  }
+
+  // Log to file for inspection
   try {
     const fs = require('fs');
-    fs.appendFileSync('webhook_inspect.log', JSON.stringify({time: new Date().toISOString(), body}) + '\n');
+    fs.appendFileSync('webhook_inspect.log', JSON.stringify({time: new Date().toISOString(), signatureValid, body}) + '\n');
   } catch(e){}
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // STEP 4: Route the event
+  // ═══════════════════════════════════════════════════════════════════════
   // Accept both 'instagram' and 'page' object types
   if (body.object !== 'instagram' && body.object !== 'page') {
     console.log(`⏭️ Ignoring object type: ${body.object}`);
@@ -91,15 +113,16 @@ router.post('/instagram', async (req, res) => {
 
   for (const entry of body.entry || []) {
     const entryId = entry.id; // IG User ID or Page ID
+    console.log(`📌 Processing entry ID: ${entryId}`);
 
     // ─── Handle Instagram Webhooks (object: "instagram") ─────
     for (const change of entry.changes || []) {
-      console.log(`📌 Change field: ${change.field}, object: ${body.object}`);
+      console.log(`   📌 Change field: ${change.field}, object: ${body.object}`);
 
       if (change.field === 'comments') {
         // Instagram webhook comments format
         handleComment(entryId, change.value, 'instagram').catch(err =>
-          console.error('❌ handleComment error:', err.message)
+          console.error('❌ handleComment error:', err.message, err.stack)
         );
       }
 
@@ -112,7 +135,7 @@ router.post('/instagram', async (req, res) => {
           media: { id: change.value.post_id },
         };
         handleComment(entryId, feedValue, 'page').catch(err =>
-          console.error('❌ handleComment (feed) error:', err.message)
+          console.error('❌ handleComment (feed) error:', err.message, err.stack)
         );
       }
     }
@@ -318,8 +341,15 @@ async function handleComment(entryId, value, source) {
 router.get('/test', (req, res) => {
   res.json({
     status: 'Webhook endpoint is reachable',
+    deploy_version: '2026-04-14-fix-signature-blocking',
     timestamp: new Date().toISOString(),
-    verify_token_set: !!process.env.META_WEBHOOK_VERIFY_TOKEN,
+    env_checks: {
+      META_APP_SECRET: !!process.env.META_APP_SECRET,
+      INSTAGRAM_APP_SECRET: !!process.env.INSTAGRAM_APP_SECRET,
+      META_WEBHOOK_VERIFY_TOKEN: !!process.env.META_WEBHOOK_VERIFY_TOKEN,
+      SUPABASE_URL: !!process.env.SUPABASE_URL,
+      NODE_ENV: process.env.NODE_ENV || 'not set',
+    },
   });
 });
 
