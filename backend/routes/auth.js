@@ -124,9 +124,12 @@ router.get('/instagram/callback', async (req, res) => {
     }
     logger.info(`Got short-lived token for IG user: ${igUserId}`);
 
-    // ─── Step 2: Exchange for long-lived token (60 days) ───
-    // Per Meta docs this is a GET, but some app configs reject GET with
-    // "Unsupported request - method type: get". Try GET first, then POST.
+    // ─── Step 2: Try to exchange for long-lived token (60 days) ───
+    // Meta's docs say this is a GET, but the /access_token endpoint on
+    // graph.instagram.com returns "Unsupported request - method type: X" for
+    // BOTH GET and POST on many app configurations — a known Meta bug. If
+    // the exchange fails, we fall back to the short-lived token (~1 hour);
+    // the user will just need to re-auth sooner. Don't block login over it.
     currentStep = 'exchange_for_long_lived_token';
     logger.info('Step 2: Exchanging for long-lived token...');
     const exchangeParams = {
@@ -134,29 +137,42 @@ router.get('/instagram/callback', async (req, res) => {
       client_secret: igAppSecret,
       access_token: shortLivedToken,
     };
-    let longLivedResponse;
-    try {
-      longLivedResponse = await axios.get(`${IG_GRAPH_BASE}/access_token`, {
-        params: exchangeParams,
-      });
-    } catch (getErr) {
-      const msg = getErr.response?.data?.error?.message || '';
-      const isMethodError = /method type:\s*get/i.test(msg) || /unsupported/i.test(msg);
-      if (!isMethodError) throw getErr;
-      logger.warn(`Step 2 GET rejected ("${msg}") — retrying as POST...`);
-      longLivedResponse = await axios.post(
-        `${IG_GRAPH_BASE}/access_token`,
-        new URLSearchParams(exchangeParams).toString(),
-        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-      );
+
+    const exchangeAttempts = [
+      { method: 'get', url: `${IG_GRAPH_BASE}/access_token` },
+      { method: 'post', url: `${IG_GRAPH_BASE}/access_token` },
+      { method: 'get', url: `${IG_GRAPH_BASE}/v23.0/access_token` },
+    ];
+
+    let longLivedToken = shortLivedToken;
+    let expiresIn = 3600; // short-lived default: 1 hour
+    let exchangeSucceeded = false;
+
+    for (const attempt of exchangeAttempts) {
+      try {
+        const res = attempt.method === 'get'
+          ? await axios.get(attempt.url, { params: exchangeParams })
+          : await axios.post(
+              attempt.url,
+              new URLSearchParams(exchangeParams).toString(),
+              { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+            );
+        if (res.data?.access_token) {
+          longLivedToken = res.data.access_token;
+          expiresIn = res.data.expires_in || 5184000;
+          exchangeSucceeded = true;
+          logger.info(`✅ Long-lived token obtained via ${attempt.method.toUpperCase()} ${attempt.url} (expires in ${Math.round(expiresIn / 86400)} days)`);
+          break;
+        }
+      } catch (err) {
+        const msg = err.response?.data?.error?.message || err.message;
+        logger.warn(`  ↳ ${attempt.method.toUpperCase()} ${attempt.url} failed: ${msg}`);
+      }
     }
 
-    const longLivedToken = longLivedResponse.data.access_token;
-    const expiresIn = longLivedResponse.data.expires_in; // seconds
-    if (!longLivedToken) {
-      throw new Error(`No access_token in Step 2 response: ${JSON.stringify(longLivedResponse.data)}`);
+    if (!exchangeSucceeded) {
+      logger.warn('⚠️ All long-lived token exchange attempts failed — using short-lived token (~1 hour). User will need to re-auth when it expires.');
     }
-    logger.info(`Got long-lived token (expires in ${Math.round((expiresIn || 5184000) / 86400)} days)`);
 
     // ─── Step 3: Get Instagram user profile ───
     // followers_count/name/profile_picture_url are Business/Creator-only, so
