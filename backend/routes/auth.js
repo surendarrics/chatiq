@@ -16,13 +16,17 @@ const IG_AUTH_URL = 'https://www.instagram.com/oauth/authorize';
 const IG_TOKEN_URL = 'https://api.instagram.com/oauth/access_token';
 const IG_GRAPH_BASE = 'https://graph.instagram.com';
 
-// Instagram Business Login permissions (different from Facebook Login permissions)
+// Instagram Business Login permissions — matches the scope list in Meta's
+// "API setup with Instagram login" Embed URL in the App Dashboard.
 const IG_SCOPES = [
   'instagram_business_basic',
   'instagram_business_manage_messages',
   'instagram_business_manage_comments',
   'instagram_business_content_publish',
+  'instagram_business_manage_insights',
 ].join(',');
+
+const FB_GRAPH_BASE = 'https://graph.facebook.com/v23.0';
 
 // ── Build the redirect URI with safety fallback ──────────────────────────────
 const CALLBACK_PATH = '/api/auth/instagram/callback';
@@ -57,9 +61,9 @@ router.get('/instagram', (req, res) => {
   logger.info(`  Instagram App ID: ${igAppId}`);
   logger.info(`  Scopes: ${IG_SCOPES}`);
 
+  // Param names match Meta's App Dashboard Embed URL exactly.
   const params = new URLSearchParams({
-    enable_fb_login: '0',           // Only show Instagram login (not Facebook)
-    force_authentication: '1',      // Always show login screen
+    force_reauth: 'true',
     client_id: igAppId,
     redirect_uri: redirectUri,
     response_type: 'code',
@@ -139,9 +143,10 @@ router.get('/instagram/callback', async (req, res) => {
     };
 
     const exchangeAttempts = [
-      { method: 'get', url: `${IG_GRAPH_BASE}/access_token` },
-      { method: 'post', url: `${IG_GRAPH_BASE}/access_token` },
       { method: 'get', url: `${IG_GRAPH_BASE}/v23.0/access_token` },
+      { method: 'get', url: `${IG_GRAPH_BASE}/access_token` },
+      { method: 'post', url: `${IG_GRAPH_BASE}/v23.0/access_token` },
+      { method: 'post', url: `${IG_GRAPH_BASE}/access_token` },
     ];
 
     let longLivedToken = shortLivedToken;
@@ -184,8 +189,8 @@ router.get('/instagram/callback', async (req, res) => {
 
     const profileAttempts = [
       {
-        label: 'GET graph.instagram.com/me',
-        fn: () => axios.get(`${IG_GRAPH_BASE}/me`, {
+        label: 'GET graph.instagram.com/v23.0/me',
+        fn: () => axios.get(`${IG_GRAPH_BASE}/v23.0/me`, {
           params: {
             fields: 'user_id,username,account_type,name,profile_picture_url,followers_count',
             access_token: longLivedToken,
@@ -193,7 +198,28 @@ router.get('/instagram/callback', async (req, res) => {
         }),
       },
       {
-        label: 'GET graph.instagram.com/me (minimal fields)',
+        label: 'GET graph.instagram.com/v23.0/me (minimal)',
+        fn: () => axios.get(`${IG_GRAPH_BASE}/v23.0/me`, {
+          params: { fields: 'user_id,username,account_type', access_token: longLivedToken },
+        }),
+      },
+      {
+        label: 'GET graph.facebook.com/v23.0/{user-id}',
+        fn: () => axios.get(`${FB_GRAPH_BASE}/${igUserId}`, {
+          params: {
+            fields: 'id,username,account_type,name,profile_picture_url,followers_count',
+            access_token: longLivedToken,
+          },
+        }),
+      },
+      {
+        label: 'GET graph.facebook.com/v23.0/me',
+        fn: () => axios.get(`${FB_GRAPH_BASE}/me`, {
+          params: { fields: 'id,username,account_type', access_token: longLivedToken },
+        }),
+      },
+      {
+        label: 'GET graph.instagram.com/me',
         fn: () => axios.get(`${IG_GRAPH_BASE}/me`, {
           params: { fields: 'user_id,username,account_type', access_token: longLivedToken },
         }),
@@ -205,16 +231,10 @@ router.get('/instagram/callback', async (req, res) => {
         }),
       },
       {
-        label: 'GET graph.instagram.com/v23.0/me (versioned)',
+        label: 'GET graph.instagram.com/v23.0/me (Bearer header)',
         fn: () => axios.get(`${IG_GRAPH_BASE}/v23.0/me`, {
-          params: { fields: 'user_id,username,account_type', access_token: longLivedToken },
-        }),
-      },
-      {
-        label: 'GET graph.instagram.com/me (Bearer header)',
-        fn: () => axios.get(`${IG_GRAPH_BASE}/me`, {
           params: { fields: 'user_id,username,account_type' },
-          headers: { Authorization: `Bearer ${longLivedToken}` },
+          headers: { Authorization: `Bearer ${longLivedToken}`, Accept: 'application/json' },
         }),
       },
     ];
