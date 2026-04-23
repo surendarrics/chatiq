@@ -175,36 +175,78 @@ router.get('/instagram/callback', async (req, res) => {
     }
 
     // ─── Step 3: Get Instagram user profile ───
-    // followers_count/name/profile_picture_url are Business/Creator-only, so
-    // request conservative fields first; if that fails, fall back to the bare
-    // minimum so personal accounts can still sign in.
+    // Some app configurations cause graph.instagram.com/me to reject every
+    // method ("Unsupported request - method type: X"). We try multiple
+    // endpoint/method/header variants; if all fail we fall back to the
+    // user_id we already got from Step 1 so login still completes.
     currentStep = 'fetch_profile';
     logger.info('Step 3: Fetching Instagram profile...');
-    let profile;
-    try {
-      const profileResponse = await axios.get(`${IG_GRAPH_BASE}/me`, {
-        params: {
-          fields: 'user_id,username,account_type,name,profile_picture_url,followers_count',
-          access_token: longLivedToken,
-        },
-      });
-      profile = profileResponse.data;
-    } catch (profileErr) {
-      const pmsg = profileErr.response?.data?.error?.message || profileErr.message;
-      logger.warn(`Step 3 full-fields /me failed ("${pmsg}") — retrying with minimal fields`);
-      const minimal = await axios.get(`${IG_GRAPH_BASE}/me`, {
-        params: {
-          fields: 'user_id,username,account_type',
-          access_token: longLivedToken,
-        },
-      });
-      profile = minimal.data;
+
+    const profileAttempts = [
+      {
+        label: 'GET graph.instagram.com/me',
+        fn: () => axios.get(`${IG_GRAPH_BASE}/me`, {
+          params: {
+            fields: 'user_id,username,account_type,name,profile_picture_url,followers_count',
+            access_token: longLivedToken,
+          },
+        }),
+      },
+      {
+        label: 'GET graph.instagram.com/me (minimal fields)',
+        fn: () => axios.get(`${IG_GRAPH_BASE}/me`, {
+          params: { fields: 'user_id,username,account_type', access_token: longLivedToken },
+        }),
+      },
+      {
+        label: 'GET graph.instagram.com/{user-id}',
+        fn: () => axios.get(`${IG_GRAPH_BASE}/${igUserId}`, {
+          params: { fields: 'id,username,account_type', access_token: longLivedToken },
+        }),
+      },
+      {
+        label: 'GET graph.instagram.com/v23.0/me (versioned)',
+        fn: () => axios.get(`${IG_GRAPH_BASE}/v23.0/me`, {
+          params: { fields: 'user_id,username,account_type', access_token: longLivedToken },
+        }),
+      },
+      {
+        label: 'GET graph.instagram.com/me (Bearer header)',
+        fn: () => axios.get(`${IG_GRAPH_BASE}/me`, {
+          params: { fields: 'user_id,username,account_type' },
+          headers: { Authorization: `Bearer ${longLivedToken}` },
+        }),
+      },
+    ];
+
+    let profile = null;
+    for (const attempt of profileAttempts) {
+      try {
+        const res = await attempt.fn();
+        if (res.data?.user_id || res.data?.id || res.data?.username) {
+          profile = res.data;
+          if (!profile.user_id) profile.user_id = profile.id || igUserId;
+          logger.info(`✅ Profile fetched via ${attempt.label}`);
+          break;
+        }
+      } catch (err) {
+        const msg = err.response?.data?.error?.message || err.message;
+        logger.warn(`  ↳ ${attempt.label} failed: ${msg}`);
+      }
     }
-    if (!profile?.user_id && !profile?.id) {
-      throw new Error(`No user_id in profile response: ${JSON.stringify(profile)}`);
+
+    if (!profile) {
+      logger.warn('⚠️ All profile-fetch attempts failed — proceeding with user_id only. Username/profile will be blank until first successful API call.');
+      profile = {
+        user_id: igUserId,
+        username: `ig_user_${igUserId}`,
+        account_type: 'UNKNOWN',
+        name: null,
+        profile_picture_url: null,
+        followers_count: 0,
+      };
     }
-    if (!profile.user_id) profile.user_id = profile.id;
-    logger.info(`Instagram profile: @${profile.username} (${profile.account_type}), ${profile.followers_count || 0} followers`);
+    logger.info(`Instagram profile: @${profile.username} (${profile.account_type || 'unknown'}), ${profile.followers_count || 0} followers`);
 
     // ─── Step 4: Upsert user in database ───
     // Use Instagram user_id as identifier (stored in facebook_id column for compatibility)
