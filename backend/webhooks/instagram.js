@@ -99,8 +99,8 @@ router.post('/instagram', async (req, res) => {
   // Log to file for inspection
   try {
     const fs = require('fs');
-    fs.appendFileSync('webhook_inspect.log', JSON.stringify({time: new Date().toISOString(), signatureValid, body}) + '\n');
-  } catch(e){}
+    fs.appendFileSync('webhook_inspect.log', JSON.stringify({ time: new Date().toISOString(), signatureValid, body }) + '\n');
+  } catch (e) { }
 
   // ═══════════════════════════════════════════════════════════════════════
   // STEP 4: Route the event

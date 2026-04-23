@@ -44,12 +44,15 @@ export default function AutomationsPage() {
   return (
     <div style={{ maxWidth: 1000, animation: 'fadeUp 0.4s ease both' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 36 }}>
-        <div>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 700, marginBottom: 6 }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: 16, flexWrap: 'wrap', marginBottom: 32,
+      }}>
+        <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+          <h1 style={{ fontSize: 'clamp(26px, 5vw, 32px)', fontWeight: 800, marginBottom: 4, color: '#fff', letterSpacing: '-0.03em' }}>
             Automations
           </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: 15 }}>
+          <p style={{ color: '#a0a0a0', fontSize: 14 }}>
             {automations.length} automation{automations.length !== 1 ? 's' : ''} configured
           </p>
         </div>
@@ -84,14 +87,14 @@ function AutomationCard({ automation, onToggle, onDelete }) {
 
   return (
     <div style={{
-      background: 'var(--bg-surface)', border: '1px solid var(--border)',
-      borderRadius: 'var(--radius-lg)', padding: 24,
+      background: '#0a0a0a', border: '1px solid #1a1a1a',
+      borderRadius: 12, padding: 'clamp(16px, 3vw, 22px)',
       transition: 'border-color 0.2s',
     }}
-      onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border-bright)'}
-      onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+      onMouseEnter={e => e.currentTarget.style.borderColor = '#2a2a2a'}
+      onMouseLeave={e => e.currentTarget.style.borderColor = '#1a1a1a'}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
         {/* Post thumbnail */}
         <div style={{
           width: 72, height: 72, borderRadius: 12, flexShrink: 0,
@@ -192,15 +195,16 @@ function Toggle({ active, onToggle }) {
 
 function StatusBadge({ status }) {
   const map = {
-    active: { bg: 'rgba(34,211,165,0.1)', color: 'var(--success)', border: 'rgba(34,211,165,0.25)', label: '● Active' },
-    paused: { bg: 'rgba(245,158,11,0.1)', color: 'var(--warning)', border: 'rgba(245,158,11,0.25)', label: '⏸ Paused' },
-    archived: { bg: 'var(--bg-elevated)', color: 'var(--text-muted)', border: 'var(--border)', label: 'Archived' },
+    active: { bg: '#fff', color: '#000', border: '#fff', label: 'Active' },
+    paused: { bg: 'transparent', color: '#fff', border: '#2a2a2a', label: 'Paused' },
+    archived: { bg: 'transparent', color: '#555', border: '#1a1a1a', label: 'Archived' },
   };
   const s = map[status] || map.paused;
   return (
     <span style={{
       fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20,
       background: s.bg, color: s.color, border: `1px solid ${s.border}`,
+      textTransform: 'uppercase', letterSpacing: '0.04em',
     }}>{s.label}</span>
   );
 }
@@ -218,16 +222,15 @@ function Chip({ label, color }) {
 function EmptyState() {
   return (
     <div style={{
-      textAlign: 'center', padding: '80px 40px',
-      background: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)',
-      border: '1px dashed var(--border)',
+      textAlign: 'center', padding: 'clamp(40px, 8vw, 72px) 24px',
+      background: '#0a0a0a', borderRadius: 14,
+      border: '1px dashed #1a1a1a',
     }}>
-      <div style={{ fontSize: 56, marginBottom: 20 }}>⚡</div>
-      <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 700, marginBottom: 10 }}>
+      <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8, color: '#fff', letterSpacing: '-0.02em' }}>
         No automations yet
       </h3>
-      <p style={{ color: 'var(--text-secondary)', marginBottom: 28 }}>
-        Create your first automation to start replying to comments and sending DMs automatically.
+      <p style={{ color: '#a0a0a0', marginBottom: 24, fontSize: 14 }}>
+        Create your first automation to start replying to comments and sending DMs.
       </p>
       <Link to="/automations/new" style={primaryBtn}>
         Create your first automation
@@ -249,9 +252,8 @@ function Loader() {
 }
 
 const primaryBtn = {
-  display: 'inline-flex', alignItems: 'center',
-  background: 'linear-gradient(135deg, var(--accent), var(--accent-dim))',
-  color: '#fff', padding: '12px 22px', borderRadius: 'var(--radius)',
+  display: 'inline-flex', alignItems: 'center', gap: 6,
+  background: '#fff', color: '#000',
+  padding: '11px 20px', borderRadius: 10,
   fontSize: 14, fontWeight: 600, textDecoration: 'none',
-  boxShadow: '0 4px 20px var(--accent-glow)',
 };

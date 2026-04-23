@@ -93,46 +93,39 @@ export default function NewAutomationPage() {
   return (
     <div style={{ maxWidth: 780, margin: '0 auto', animation: 'fadeUp 0.4s ease both' }}>
       {/* Header */}
-      <div style={{ marginBottom: 36 }}>
+      <div style={{ marginBottom: 28 }}>
         <button onClick={() => navigate('/automations')} style={backBtn}>
           ← Back to Automations
         </button>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 700, marginTop: 12, marginBottom: 6 }}>
+        <h1 style={{ fontSize: 'clamp(26px, 5vw, 32px)', fontWeight: 800, marginTop: 12, marginBottom: 4, color: '#fff', letterSpacing: '-0.03em' }}>
           New Automation
         </h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: 15 }}>
+        <p style={{ color: '#a0a0a0', fontSize: 14 }}>
           Set up keyword-triggered comment replies and DMs in minutes.
         </p>
       </div>
 
       {/* Stepper */}
-      <div style={{ display: 'flex', gap: 0, marginBottom: 40, position: 'relative' }}>
+      <div style={{ display: 'flex', gap: 0, marginBottom: 32, position: 'relative' }}>
         {STEPS.map((s, i) => (
           <React.Fragment key={s}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, flex: 1 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, flex: '0 0 auto' }}>
               <div style={{
-                width: 34, height: 34, borderRadius: '50%',
+                width: 30, height: 30, borderRadius: '50%',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 13, fontWeight: 700,
-                background: i < step ? 'var(--success)' : i === step ? 'var(--accent)' : 'var(--bg-elevated)',
-                border: `2px solid ${i < step ? 'var(--success)' : i === step ? 'var(--accent)' : 'var(--border)'}`,
-                color: i <= step ? '#fff' : 'var(--text-muted)',
+                fontSize: 12, fontWeight: 700,
+                background: i <= step ? '#fff' : 'transparent',
+                border: `1px solid ${i <= step ? '#fff' : '#2a2a2a'}`,
+                color: i <= step ? '#000' : '#555',
                 transition: 'all 0.3s',
               }}>
                 {i < step ? '✓' : i + 1}
               </div>
-              <span style={{
-                fontSize: 11, color: i === step ? 'var(--text-primary)' : 'var(--text-muted)',
-                fontWeight: i === step ? 600 : 400, textAlign: 'center',
-                display: 'none',
-              }}
-                className="step-label"
-              >{s}</span>
             </div>
             {i < STEPS.length - 1 && (
               <div style={{
-                flex: 1, height: 2, marginTop: 16,
-                background: i < step ? 'var(--success)' : 'var(--border)',
+                flex: 1, height: 1, marginTop: 15,
+                background: i < step ? '#fff' : '#1a1a1a',
                 transition: 'background 0.3s',
               }} />
             )}
@@ -142,8 +135,8 @@ export default function NewAutomationPage() {
 
       {/* Step Content */}
       <div style={{
-        background: 'var(--bg-surface)', border: '1px solid var(--border)',
-        borderRadius: 'var(--radius-lg)', padding: 36, marginBottom: 24,
+        background: '#0a0a0a', border: '1px solid #1a1a1a',
+        borderRadius: 14, padding: 'clamp(20px, 5vw, 32px)', marginBottom: 20,
       }}>
         <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 700, marginBottom: 6 }}>
           {STEPS[step]}
@@ -228,16 +221,16 @@ function AccountStep({ accounts, selected, onSelect }) {
           style={{
             display: 'flex', alignItems: 'center', gap: 16,
             padding: '16px 20px', borderRadius: 'var(--radius)',
-            background: selected === acc.id ? 'rgba(232,67,147,0.08)' : 'var(--bg-elevated)',
+            background: selected === acc.id ? '#1a1a1a' : '#0a0a0a',
             border: `1px solid ${selected === acc.id ? 'var(--accent)' : 'var(--border)'}`,
             cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s',
           }}
         >
           <div style={{
-            width: 48, height: 48, borderRadius: '50%',
-            background: 'linear-gradient(135deg, var(--accent), var(--accent-2))',
+            width: 44, height: 44, borderRadius: '50%',
+            background: '#0a0a0a', border: '1px solid #1a1a1a',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 20, flexShrink: 0, overflow: 'hidden',
+            fontSize: 16, flexShrink: 0, overflow: 'hidden', color: '#fff',
           }}>
             {acc.profile_picture_url
               ? <img src={acc.profile_picture_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -309,9 +302,9 @@ function PostStep({ posts, selected, onSelect, loading }) {
           {selected === post.id && (
             <div style={{
               position: 'absolute', inset: 0,
-              background: 'rgba(232,67,147,0.4)',
+              background: 'rgba(0,0,0,0.6)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 28, color: '#fff',
+              fontSize: 28, color: '#fff', fontWeight: 700,
             }}>✓</div>
           )}
           {post.media_type === 'VIDEO' && (
@@ -509,18 +502,18 @@ const STEP_HINTS = [
 ];
 
 const primaryBtn = {
-  background: 'linear-gradient(135deg, var(--accent), var(--accent-dim))',
-  border: 'none', color: '#fff', padding: '12px 24px',
-  borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 600,
+  background: '#fff', color: '#000',
+  border: 'none', padding: '12px 22px',
+  borderRadius: 10, fontSize: 14, fontWeight: 600,
   cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
-  boxShadow: '0 4px 20px var(--accent-glow)', fontFamily: 'var(--font-body)',
+  minHeight: 44,
 };
 const ghostBtn = {
-  background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-  color: 'var(--text-secondary)', padding: '12px 20px',
-  borderRadius: 'var(--radius)', fontSize: 14, cursor: 'pointer',
+  background: 'transparent', border: '1px solid #2a2a2a',
+  color: '#fff', padding: '11px 18px',
+  borderRadius: 10, fontSize: 14, cursor: 'pointer',
   display: 'inline-flex', alignItems: 'center', gap: 8,
-  fontFamily: 'var(--font-body)', transition: 'border-color 0.15s',
+  minHeight: 44, transition: 'border-color 0.15s',
 };
 const backBtn = {
   background: 'none', border: 'none', color: 'var(--text-muted)',

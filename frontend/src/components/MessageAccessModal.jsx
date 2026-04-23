@@ -165,9 +165,9 @@ const overlay = {
 
 const modal = {
   width: '100%', maxWidth: 540,
-  background: 'var(--bg-surface, #1a1a2e)',
-  border: '1px solid var(--border, #2a2a3e)',
-  borderRadius: 16, padding: 32,
+  background: '#000',
+  border: '1px solid #1a1a1a',
+  borderRadius: 14, padding: 'clamp(20px, 5vw, 32px)',
   maxHeight: '90vh', overflowY: 'auto',
 };
 
@@ -175,7 +175,7 @@ const header = { textAlign: 'center', marginBottom: 24 };
 
 const iconWrap = {
   width: 56, height: 56, borderRadius: 14,
-  background: 'rgba(232,67,147,0.1)', border: '1px solid rgba(232,67,147,0.2)',
+  background: '#0a0a0a', border: '1px solid #1a1a1a', color: '#fff',
   display: 'flex', alignItems: 'center', justifyContent: 'center',
   margin: '0 auto 16px',
 };
@@ -209,25 +209,25 @@ const step = {
 };
 
 const stepNum = {
-  width: 28, height: 28, borderRadius: 8, flexShrink: 0,
-  background: 'linear-gradient(135deg, #e84393, #6c5ce7)',
+  width: 26, height: 26, borderRadius: 6, flexShrink: 0,
+  background: '#fff', color: '#000',
   display: 'flex', alignItems: 'center', justifyContent: 'center',
-  fontSize: 13, fontWeight: 700, color: '#fff',
+  fontSize: 12, fontWeight: 700,
 };
 
 const stepText = { fontSize: 14, color: 'var(--text-secondary, #bbb)', lineHeight: 1.5 };
 
 const altPath = {
   marginTop: 12, padding: '10px 14px', borderRadius: 8,
-  background: 'rgba(124,92,252,0.08)', border: '1px solid rgba(124,92,252,0.15)',
-  fontSize: 12, color: 'var(--text-secondary, #aaa)', lineHeight: 1.5,
+  background: '#0a0a0a', border: '1px solid #1a1a1a',
+  fontSize: 12, color: '#a0a0a0', lineHeight: 1.5,
 };
 
 const warningBox = {
   display: 'flex', alignItems: 'center', gap: 10,
   padding: '12px 16px', borderRadius: 10,
-  background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)',
-  fontSize: 13, color: 'var(--text-secondary, #bbb)', marginBottom: 20, lineHeight: 1.5,
+  background: '#0a0a0a', border: '1px solid #2a2a2a',
+  fontSize: 13, color: '#a0a0a0', marginBottom: 20, lineHeight: 1.5,
 };
 
 const checkboxRow = {
@@ -248,10 +248,9 @@ const skipBtn = {
 };
 
 const confirmBtn = {
-  background: 'linear-gradient(135deg, #e84393, #6c5ce7)',
-  border: 'none', color: '#fff', padding: '12px 28px',
-  borderRadius: 10, fontSize: 14, fontWeight: 600,
-  boxShadow: '0 4px 20px rgba(232,67,147,0.3)',
+  background: '#fff', color: '#000',
+  border: 'none', padding: '12px 24px',
+  borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer',
 };
 
 const bannerStyle = {

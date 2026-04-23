@@ -46,11 +46,17 @@ const apiLimiter = rateLimit({
 });
 app.use('/api/', apiLimiter);
 
-// Webhook needs raw body for signature validation
-app.use('/webhook', express.raw({ type: 'application/json' }));
-
 // ── Body Parsing ─────────────────────────────────────────────────────────────
-app.use(express.json({ limit: '10mb' }));
+// We use the `verify` option to store the raw, unparsed Buffer of the request body
+// inside `req.rawBody`. This is CRITICAL for perfectly matching Meta's HMAC signature.
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, res, buf) => {
+    if (req.originalUrl.startsWith('/webhook')) {
+      req.rawBody = buf;
+    }
+  }
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // ── Logging ──────────────────────────────────────────────────────────────────

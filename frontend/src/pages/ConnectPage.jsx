@@ -248,15 +248,11 @@ function FaqItem({ question, answer }) {
 }
 
 function Badge({ type, children }) {
-  const colors = {
-    success: { bg: 'rgba(34,211,165,0.1)', fg: 'var(--success)', bd: 'rgba(34,211,165,0.2)' },
-    warning: { bg: 'rgba(245,158,11,0.1)', fg: '#f59e0b', bd: 'rgba(245,158,11,0.2)' },
-  };
-  const c = colors[type] || colors.success;
   return (
     <span style={{
       fontSize: 11, padding: '3px 10px', borderRadius: 20,
-      background: c.bg, color: c.fg, border: `1px solid ${c.bd}`,
+      background: 'transparent', color: '#fff',
+      border: '1px solid #2a2a2a', fontWeight: 500,
     }}>{children}</span>
   );
 }
@@ -265,11 +261,11 @@ function Logo() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
       <div style={{
-        width: 32, height: 32, background: 'linear-gradient(135deg, var(--accent), var(--accent-2))',
-        borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: 'var(--font-display)', fontWeight: 800, color: '#fff', fontSize: 16,
+        width: 32, height: 32, background: '#fff', color: '#000',
+        borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontWeight: 800, fontSize: 16,
       }}>C</div>
-      <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 18 }}>ChatIQ</span>
+      <span style={{ fontWeight: 700, fontSize: 18, letterSpacing: '-0.02em' }}>ChatIQ</span>
     </div>
   );
 }
@@ -277,10 +273,10 @@ function Logo() {
 function AccountAvatar({ url, username }) {
   return (
     <div style={{
-      width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
-      background: 'linear-gradient(135deg, var(--accent), var(--accent-2))',
+      width: 44, height: 44, borderRadius: '50%', flexShrink: 0,
+      background: '#0a0a0a', border: '1px solid #1a1a1a',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: 18, overflow: 'hidden', color: '#fff', fontWeight: 700,
+      fontSize: 16, overflow: 'hidden', color: '#fff', fontWeight: 700,
     }}>
       {url ? (
         <img src={url} alt={username} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -337,81 +333,81 @@ const FAQ = [
 // ═══ Styles ══════════════════════════════════════════════════════════════════
 
 const pageStyle = {
-  minHeight: '100vh', background: 'var(--bg-base)',
-  display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 24px',
+  minHeight: '100vh', background: '#000', color: '#fff',
+  display: 'flex', flexDirection: 'column', alignItems: 'center',
+  padding: 'clamp(24px, 5vw, 60px) 16px',
 };
 
 const titleStyle = {
-  fontFamily: 'var(--font-display)', fontSize: 36, fontWeight: 800, marginBottom: 10,
+  fontSize: 'clamp(26px, 6vw, 36px)', fontWeight: 800, marginBottom: 10,
+  color: '#fff', letterSpacing: '-0.03em',
 };
 
 const subtitleStyle = {
-  color: 'var(--text-secondary)', fontSize: 16, marginBottom: 40, lineHeight: 1.6,
+  color: '#a0a0a0', fontSize: 15, marginBottom: 36, lineHeight: 1.55,
 };
 
 const sectionLabel = {
-  fontSize: 13, fontWeight: 600, color: 'var(--text-muted)',
+  fontSize: 12, fontWeight: 600, color: '#777',
   textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12,
 };
 
 const accountCard = {
-  display: 'flex', alignItems: 'center', gap: 14,
-  padding: '14px 18px', borderRadius: 'var(--radius)',
-  background: 'var(--bg-surface)', border: '1px solid var(--border)',
+  display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+  padding: '14px 16px', borderRadius: 10,
+  background: '#0a0a0a', border: '1px solid #1a1a1a',
 };
 
 const connectPanel = {
-  background: 'var(--bg-surface)', border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-lg)', padding: 28, marginBottom: 24,
+  background: '#0a0a0a', border: '1px solid #1a1a1a',
+  borderRadius: 12, padding: 'clamp(18px, 4vw, 28px)', marginBottom: 20,
 };
 
 const igIconWrapper = {
-  width: 50, height: 50, borderRadius: 14, flexShrink: 0,
+  width: 48, height: 48, borderRadius: 12, flexShrink: 0,
   background: 'linear-gradient(135deg, #f9ce34, #ee2a7b, #6228d7)',
   display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
 };
 
 const stepsContainer = {
   display: 'flex', flexDirection: 'column', gap: 10,
-  marginBottom: 20, padding: '16px 18px',
-  background: 'var(--bg-base)', borderRadius: 'var(--radius)',
+  marginBottom: 18, padding: '14px 16px',
+  background: '#000', border: '1px solid #141414', borderRadius: 8,
 };
 
 const stepDot = {
   width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
-  background: 'var(--accent)', color: '#fff',
+  background: '#fff', color: '#000',
   display: 'flex', alignItems: 'center', justifyContent: 'center',
   fontSize: 11, fontWeight: 700,
 };
 
 const connectBtn = {
   width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-  background: 'linear-gradient(135deg, #e1306c, #833ab4)', border: 'none', color: '#fff',
-  padding: '14px 28px', borderRadius: 'var(--radius)', fontSize: 15, fontWeight: 600,
-  cursor: 'pointer', fontFamily: 'var(--font-body)', transition: 'all 0.2s',
+  background: 'linear-gradient(135deg, #f9ce34, #ee2a7b, #6228d7)', border: 'none', color: '#fff',
+  padding: '14px 24px', borderRadius: 10, fontSize: 15, fontWeight: 600,
+  cursor: 'pointer', minHeight: 48, transition: 'opacity 0.15s',
 };
 
 const enableDmBtn = {
-  fontSize: 11, padding: '3px 10px', borderRadius: 20,
-  background: 'rgba(232,67,147,0.1)', color: 'var(--accent)',
-  border: '1px solid rgba(232,67,147,0.2)', cursor: 'pointer',
-  fontFamily: 'var(--font-body)', fontWeight: 600,
+  fontSize: 11, padding: '4px 10px', borderRadius: 20,
+  background: '#fff', color: '#000', border: '1px solid #fff',
+  cursor: 'pointer', fontWeight: 600,
 };
 
 const ghostBtn = {
-  background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-  color: 'var(--text-secondary)', padding: '10px 18px',
-  borderRadius: 'var(--radius-sm)', fontSize: 13, cursor: 'pointer',
-  fontFamily: 'var(--font-body)',
+  background: 'transparent', border: '1px solid #2a2a2a',
+  color: '#fff', padding: '9px 16px',
+  borderRadius: 8, fontSize: 13, cursor: 'pointer',
 };
 
 const disconnectStyle = {
-  background: 'none', border: 'none', color: 'var(--text-muted)',
+  background: 'none', border: 'none', color: '#555',
   fontSize: 12, cursor: 'pointer', padding: '4px 8px', borderRadius: 6,
   transition: 'color 0.15s',
 };
 
 const requirementsBox = {
-  background: 'var(--bg-surface)', border: '1px solid var(--border)',
-  borderRadius: 'var(--radius)', padding: 24,
+  background: '#0a0a0a', border: '1px solid #1a1a1a',
+  borderRadius: 10, padding: 22,
 };

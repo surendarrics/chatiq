@@ -136,16 +136,15 @@ export default function Dashboard() {
       {/* Connect prompt if no accounts */}
       {!hasAccounts && (
         <div style={{
-          background: 'linear-gradient(135deg, rgba(232,67,147,0.08), rgba(124,92,252,0.08))',
-          border: '1px solid rgba(232,67,147,0.2)',
-          borderRadius: 'var(--radius-lg)', padding: '40px',
-          textAlign: 'center', marginBottom: 40,
+          background: '#0a0a0a',
+          border: '1px solid #1a1a1a',
+          borderRadius: 14, padding: '32px 20px',
+          textAlign: 'center', marginBottom: 36,
         }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>📸</div>
-          <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 700, marginBottom: 10 }}>
+          <h3 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8, color: '#fff', letterSpacing: '-0.02em' }}>
             No Instagram account connected
           </h3>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: 24 }}>
+          <p style={{ color: '#a0a0a0', marginBottom: 22, fontSize: 14 }}>
             Connect your Instagram Business account to start automating comments.
           </p>
           <Link to="/connect" style={btnStyle}>
@@ -156,7 +155,7 @@ export default function Dashboard() {
 
       {/* Stats Grid */}
       {hasAccounts && stats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 36 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 32 }}>
           {[
             { label: 'Total Automations', value: stats.total_automations, color: 'var(--accent-2)', icon: '⚡' },
             { label: 'Active Now', value: stats.active_automations, color: 'var(--success)', icon: '●' },
@@ -168,7 +167,12 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: hasAccounts ? '1fr 340px' : '1fr', gap: 24 }}>
+      <div className="dash-grid" style={{
+        display: 'grid',
+        gridTemplateColumns: hasAccounts ? 'minmax(0, 1fr) 320px' : '1fr',
+        gap: 20,
+      }}>
+        <style>{`@media (max-width: 900px) { .dash-grid { grid-template-columns: 1fr !important; } }`}</style>
         {/* Activity Feed */}
         <div style={cardStyle}>
           <div style={cardHeader}>
@@ -272,9 +276,9 @@ function AccountRow({ account }) {
     }}>
       <div style={{
         width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
-        background: 'linear-gradient(135deg, var(--accent), var(--accent-2))',
+        background: '#0a0a0a', border: '1px solid #1a1a1a',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 16, overflow: 'hidden',
+        fontSize: 14, overflow: 'hidden', color: '#fff', fontWeight: 700,
       }}>
         {account.profile_picture_url
           ? <img src={account.profile_picture_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -288,8 +292,8 @@ function AccountRow({ account }) {
       </div>
       <div style={{
         marginLeft: 'auto', fontSize: 11, padding: '3px 10px',
-        borderRadius: 20, background: 'rgba(34,211,165,0.1)',
-        color: 'var(--success)', border: '1px solid rgba(34,211,165,0.2)',
+        borderRadius: 20, background: 'transparent',
+        color: '#fff', border: '1px solid #2a2a2a',
       }}>Connected</div>
     </div>
   );
@@ -327,27 +331,26 @@ function timeAgo(dateStr) {
 }
 
 const cardStyle = {
-  background: 'var(--bg-surface)', border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-lg)', padding: 28,
+  background: '#0a0a0a', border: '1px solid #1a1a1a',
+  borderRadius: 12, padding: 'clamp(18px, 4vw, 26px)',
 };
 const cardHeader = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-  marginBottom: 20,
+  marginBottom: 18,
 };
 const cardTitle = {
-  fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700,
+  fontSize: 17, fontWeight: 700, color: '#fff', letterSpacing: '-0.01em',
 };
 const btnStyle = {
   display: 'inline-flex', alignItems: 'center', gap: 8,
-  background: 'linear-gradient(135deg, var(--accent), var(--accent-dim))',
-  border: 'none', color: '#fff', padding: '12px 24px',
-  borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 600, cursor: 'pointer',
-  boxShadow: '0 4px 20px var(--accent-glow)',
+  background: '#fff', color: '#000',
+  border: 'none', padding: '12px 22px',
+  borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer',
 };
 const quickActionStyle = {
   display: 'flex', alignItems: 'center', gap: 10,
-  padding: '10px 14px', borderRadius: 'var(--radius-sm)',
-  background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-  color: 'var(--text-secondary)', fontSize: 13, textDecoration: 'none',
+  padding: '10px 14px', borderRadius: 8,
+  background: '#000', border: '1px solid #1a1a1a',
+  color: '#a0a0a0', fontSize: 13, textDecoration: 'none',
   transition: 'border-color 0.15s, color 0.15s',
 };

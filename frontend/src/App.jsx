@@ -22,11 +22,11 @@ function FullScreenLoader() {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      height: '100vh', background: '#0a0a0f', flexDirection: 'column', gap: '16px'
+      height: '100vh', background: '#000', flexDirection: 'column', gap: '16px'
     }}>
       <div style={{
-        width: '40px', height: '40px', borderRadius: '50%',
-        border: '3px solid #1e1e2e', borderTop: '3px solid #e84393',
+        width: '36px', height: '36px', borderRadius: '50%',
+        border: '2px solid #1a1a1a', borderTop: '2px solid #fff',
         animation: 'spin 0.8s linear infinite'
       }} />
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
@@ -41,8 +41,9 @@ export default function App() {
         <Toaster
           position="top-right"
           toastOptions={{
-            style: { background: '#1a1a2e', color: '#e2e8f0', border: '1px solid #2d2d44' },
-            success: { iconTheme: { primary: '#e84393', secondary: '#0a0a0f' } },
+            style: { background: '#0a0a0a', color: '#fff', border: '1px solid #1a1a1a' },
+            success: { iconTheme: { primary: '#fff', secondary: '#000' } },
+            error: { iconTheme: { primary: '#ff5555', secondary: '#fff' } },
           }}
         />
         <Routes>

@@ -93,14 +93,19 @@ router.get('/instagram/callback', async (req, res) => {
     return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=no_code`);
   }
 
+  let currentStep = 'init';
   try {
     const redirectUri = getRedirectUri(req);
 
     // ─── Step 1: Exchange code for short-lived access token ───
     // Instagram uses POST with form-encoded body (NOT GET like Facebook)
+    currentStep = 'exchange_code_for_short_lived_token';
     logger.info('Step 1: Exchanging code for short-lived token...');
     const igAppId = process.env.INSTAGRAM_APP_ID || process.env.META_APP_ID;
     const igAppSecret = process.env.INSTAGRAM_APP_SECRET || process.env.META_APP_SECRET;
+    if (!igAppId || !igAppSecret) {
+      throw new Error('Missing INSTAGRAM_APP_ID / INSTAGRAM_APP_SECRET (or META_APP_ID/SECRET fallback)');
+    }
     const tokenResponse = await axios.post(IG_TOKEN_URL,
       new URLSearchParams({
         client_id: igAppId,
@@ -114,32 +119,75 @@ router.get('/instagram/callback', async (req, res) => {
 
     const shortLivedToken = tokenResponse.data.access_token;
     const igUserId = tokenResponse.data.user_id;
+    if (!shortLivedToken) {
+      throw new Error(`No access_token in Step 1 response: ${JSON.stringify(tokenResponse.data)}`);
+    }
     logger.info(`Got short-lived token for IG user: ${igUserId}`);
 
     // ─── Step 2: Exchange for long-lived token (60 days) ───
+    // Per Meta docs this is a GET, but some app configs reject GET with
+    // "Unsupported request - method type: get". Try GET first, then POST.
+    currentStep = 'exchange_for_long_lived_token';
     logger.info('Step 2: Exchanging for long-lived token...');
-    const longLivedResponse = await axios.get(`${IG_GRAPH_BASE}/access_token`, {
-      params: {
-        grant_type: 'ig_exchange_token',
-        client_secret: igAppSecret,
-        access_token: shortLivedToken,
-      },
-    });
+    const exchangeParams = {
+      grant_type: 'ig_exchange_token',
+      client_secret: igAppSecret,
+      access_token: shortLivedToken,
+    };
+    let longLivedResponse;
+    try {
+      longLivedResponse = await axios.get(`${IG_GRAPH_BASE}/access_token`, {
+        params: exchangeParams,
+      });
+    } catch (getErr) {
+      const msg = getErr.response?.data?.error?.message || '';
+      const isMethodError = /method type:\s*get/i.test(msg) || /unsupported/i.test(msg);
+      if (!isMethodError) throw getErr;
+      logger.warn(`Step 2 GET rejected ("${msg}") — retrying as POST...`);
+      longLivedResponse = await axios.post(
+        `${IG_GRAPH_BASE}/access_token`,
+        new URLSearchParams(exchangeParams).toString(),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      );
+    }
 
     const longLivedToken = longLivedResponse.data.access_token;
     const expiresIn = longLivedResponse.data.expires_in; // seconds
-    logger.info(`Got long-lived token (expires in ${Math.round(expiresIn / 86400)} days)`);
+    if (!longLivedToken) {
+      throw new Error(`No access_token in Step 2 response: ${JSON.stringify(longLivedResponse.data)}`);
+    }
+    logger.info(`Got long-lived token (expires in ${Math.round((expiresIn || 5184000) / 86400)} days)`);
 
     // ─── Step 3: Get Instagram user profile ───
+    // followers_count/name/profile_picture_url are Business/Creator-only, so
+    // request conservative fields first; if that fails, fall back to the bare
+    // minimum so personal accounts can still sign in.
+    currentStep = 'fetch_profile';
     logger.info('Step 3: Fetching Instagram profile...');
-    const profileResponse = await axios.get(`${IG_GRAPH_BASE}/me`, {
-      params: {
-        fields: 'user_id,username,name,account_type,profile_picture_url,followers_count',
-        access_token: longLivedToken,
-      },
-    });
-
-    const profile = profileResponse.data;
+    let profile;
+    try {
+      const profileResponse = await axios.get(`${IG_GRAPH_BASE}/me`, {
+        params: {
+          fields: 'user_id,username,account_type,name,profile_picture_url,followers_count',
+          access_token: longLivedToken,
+        },
+      });
+      profile = profileResponse.data;
+    } catch (profileErr) {
+      const pmsg = profileErr.response?.data?.error?.message || profileErr.message;
+      logger.warn(`Step 3 full-fields /me failed ("${pmsg}") — retrying with minimal fields`);
+      const minimal = await axios.get(`${IG_GRAPH_BASE}/me`, {
+        params: {
+          fields: 'user_id,username,account_type',
+          access_token: longLivedToken,
+        },
+      });
+      profile = minimal.data;
+    }
+    if (!profile?.user_id && !profile?.id) {
+      throw new Error(`No user_id in profile response: ${JSON.stringify(profile)}`);
+    }
+    if (!profile.user_id) profile.user_id = profile.id;
     logger.info(`Instagram profile: @${profile.username} (${profile.account_type}), ${profile.followers_count || 0} followers`);
 
     // ─── Step 4: Upsert user in database ───
@@ -198,12 +246,15 @@ router.get('/instagram/callback', async (req, res) => {
 
   } catch (err) {
     logger.error('❌ OAuth callback error:', {
+      step: currentStep,
       message: err.message,
       responseData: err.response?.data,
       responseStatus: err.response?.status,
       stack: err.stack?.split('\n').slice(0, 3).join('\n'),
     });
-    res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=auth_failed`);
+    res.redirect(
+      `${process.env.FRONTEND_URL}/auth/callback?error=auth_failed&step=${encodeURIComponent(currentStep)}`
+    );
   }
 });
 

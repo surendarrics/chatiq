@@ -11,90 +11,58 @@ export default function LandingPage() {
     if (user) navigate('/dashboard');
   }, [user, navigate]);
 
-  // ── OAuth: redirect to backend, which redirects to Facebook ──
   const handleConnect = () => {
     window.location.href = authApi.getInstagramAuthUrl();
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-base)', overflow: 'hidden' }}>
-      {/* Background mesh */}
-      <div style={{
-        position: 'fixed', inset: 0, pointerEvents: 'none',
-        background: `
-          radial-gradient(ellipse 80% 60% at 20% 10%, rgba(232,67,147,0.08) 0%, transparent 60%),
-          radial-gradient(ellipse 60% 50% at 80% 80%, rgba(124,92,252,0.08) 0%, transparent 60%)
-        `,
-      }} />
+    <div style={{ minHeight: '100vh', background: '#000', color: '#fff' }}>
+      <style>{mediaCSS}</style>
 
       {/* Nav */}
-      <nav style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '20px 48px', position: 'relative', zIndex: 10,
-      }}>
+      <nav className="landing-nav">
         <Logo />
-        <button onClick={handleConnect} style={styles.navBtn}>
-          Get started free
+        <button onClick={handleConnect} className="btn btn-ghost landing-nav-btn">
+          Get started
         </button>
       </nav>
 
       {/* Hero */}
-      <section style={{
-        maxWidth: 900, margin: '0 auto', padding: '80px 24px 60px',
-        textAlign: 'center', position: 'relative', zIndex: 1,
-      }}>
-        <div style={styles.badge}>
-          <span style={{ color: 'var(--accent)' }}>✦</span>
-          &nbsp;Instagram Automation Platform
-        </div>
+      <section className="landing-hero">
+        <div className="landing-badge">Instagram Automation</div>
 
-        <h1 style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 'clamp(48px, 8vw, 84px)',
-          fontWeight: 800,
-          lineHeight: 1.05,
-          marginBottom: 28,
-          letterSpacing: '-2px',
-        }}>
-          Turn comments<br />
-          into <span className="gradient-text">conversations</span>
+        <h1 className="landing-h1">
+          Turn comments<br />into conversations
         </h1>
 
-        <p style={{
-          fontSize: 20, color: 'var(--text-secondary)',
-          maxWidth: 560, margin: '0 auto 48px',
-          lineHeight: 1.7,
-        }}>
-          ChatIQ automatically replies to Instagram comments and sends DMs when your keywords are triggered — like ManyChat, but sharper.
+        <p className="landing-sub">
+          ChatIQ automatically replies to Instagram comments and sends DMs when your keywords are triggered.
         </p>
 
-        <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <button onClick={handleConnect} style={styles.primaryBtn}>
-            <InstagramIcon />
-            Connect Instagram — it's free
+        <div className="landing-cta">
+          <button onClick={handleConnect} className="btn btn-primary landing-primary">
+            <InstagramIcon /> Connect Instagram
           </button>
-          <a href="#how-it-works" style={styles.ghostBtn}>See how it works →</a>
+          <a href="#how-it-works" className="btn btn-ghost">
+            How it works →
+          </a>
         </div>
 
-        <p style={{ marginTop: 20, fontSize: 13, color: 'var(--text-muted)' }}>
-          No credit card required · Official Meta API · GDPR compliant
+        <p className="landing-fineprint">
+          No credit card · Official Meta API · GDPR compliant
         </p>
       </section>
 
-      {/* Dashboard Preview */}
-      <section style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px 80px', position: 'relative', zIndex: 1 }}>
+      {/* Dashboard preview */}
+      <section className="landing-section" style={{ paddingTop: 0 }}>
         <DashboardPreview />
       </section>
 
       {/* How it works */}
-      <section id="how-it-works" style={{ maxWidth: 1100, margin: '0 auto', padding: '80px 24px' }}>
-        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 40, fontWeight: 700, textAlign: 'center', marginBottom: 16 }}>
-          How ChatIQ works
-        </h2>
-        <p style={{ textAlign: 'center', color: 'var(--text-secondary)', marginBottom: 60, fontSize: 17 }}>
-          Set it up once, let it run forever.
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 24 }}>
+      <section id="how-it-works" className="landing-section">
+        <h2 className="landing-h2">How ChatIQ works</h2>
+        <p className="landing-section-sub">Set it up once, let it run forever.</p>
+        <div className="landing-grid">
           {STEPS.map((step, i) => (
             <StepCard key={i} step={step} index={i + 1} />
           ))}
@@ -102,8 +70,8 @@ export default function LandingPage() {
       </section>
 
       {/* Features */}
-      <section style={{ maxWidth: 1100, margin: '0 auto', padding: '40px 24px 100px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
+      <section className="landing-section">
+        <div className="landing-grid features">
           {FEATURES.map((f, i) => (
             <FeatureCard key={i} feature={f} />
           ))}
@@ -111,32 +79,20 @@ export default function LandingPage() {
       </section>
 
       {/* CTA */}
-      <section style={{
-        maxWidth: 700, margin: '0 auto 100px', padding: '60px 24px',
-        textAlign: 'center',
-        background: 'linear-gradient(135deg, rgba(232,67,147,0.08), rgba(124,92,252,0.08))',
-        borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)',
-      }}>
-        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 40, fontWeight: 700, marginBottom: 16 }}>
-          Ready to automate?
-        </h2>
-        <p style={{ color: 'var(--text-secondary)', marginBottom: 32 }}>
+      <section className="landing-cta-box">
+        <h2 className="landing-h2">Ready to automate?</h2>
+        <p className="landing-section-sub">
           Connect your Instagram account and create your first automation in 2 minutes.
         </p>
-        <button onClick={handleConnect} style={styles.primaryBtn}>
-          <InstagramIcon />
-          Start for free
+        <button onClick={handleConnect} className="btn btn-primary landing-primary">
+          <InstagramIcon /> Start for free
         </button>
       </section>
 
       {/* Footer */}
-      <footer style={{
-        borderTop: '1px solid var(--border)', padding: '32px 48px',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        color: 'var(--text-muted)', fontSize: 13,
-      }}>
+      <footer className="landing-footer">
         <Logo small />
-        <p>© 2025 ChatIQ. Built with the official Meta Instagram API.</p>
+        <p style={{ color: '#555', fontSize: 12 }}>© 2026 ChatIQ</p>
       </footer>
     </div>
   );
@@ -145,90 +101,144 @@ export default function LandingPage() {
 function Logo({ small }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <div style={{
-        width: small ? 28 : 36, height: small ? 28 : 36,
-        background: 'linear-gradient(135deg, var(--accent), var(--accent-2))',
-        borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: small ? 14 : 18, fontWeight: 800, color: '#fff',
-        fontFamily: 'var(--font-display)',
-      }}>C</div>
-      <span style={{
-        fontFamily: 'var(--font-display)', fontWeight: 700,
-        fontSize: small ? 16 : 20, color: 'var(--text-primary)',
-      }}>ChatIQ</span>
+      <div
+        style={{
+          width: small ? 26 : 32,
+          height: small ? 26 : 32,
+          background: '#fff',
+          color: '#000',
+          borderRadius: 8,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: small ? 13 : 16,
+          fontWeight: 800,
+        }}
+      >
+        C
+      </div>
+      <span style={{ fontWeight: 700, fontSize: small ? 15 : 18, letterSpacing: '-0.02em' }}>ChatIQ</span>
     </div>
   );
 }
 
 function DashboardPreview() {
   return (
-    <div style={{
-      borderRadius: 'var(--radius-lg)',
-      border: '1px solid var(--border)',
-      background: 'var(--bg-surface)',
-      overflow: 'hidden',
-      boxShadow: '0 40px 120px rgba(0,0,0,0.6), 0 0 0 1px var(--border)',
-      position: 'relative',
-    }}>
-      {/* Fake browser bar */}
-      <div style={{
-        background: 'var(--bg-elevated)', padding: '12px 20px',
-        display: 'flex', alignItems: 'center', gap: 8,
-        borderBottom: '1px solid var(--border)',
-      }}>
-        {['#ef4444', '#f59e0b', '#22d3a5'].map(c => (
-          <div key={c} style={{ width: 12, height: 12, borderRadius: '50%', background: c }} />
+    <div
+      style={{
+        borderRadius: 14,
+        border: '1px solid #1a1a1a',
+        background: '#000',
+        overflow: 'hidden',
+        boxShadow: '0 20px 60px rgba(255,255,255,0.03)',
+      }}
+    >
+      <div
+        style={{
+          background: '#0a0a0a',
+          padding: '10px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          borderBottom: '1px solid #1a1a1a',
+        }}
+      >
+        {['#555', '#555', '#555'].map((c, i) => (
+          <div key={i} style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />
         ))}
-        <div style={{
-          marginLeft: 12, background: 'var(--bg-hover)', borderRadius: 6,
-          padding: '4px 16px', fontSize: 12, color: 'var(--text-muted)', flex: 1, maxWidth: 300,
-        }}>
+        <div
+          style={{
+            marginLeft: 10,
+            background: '#141414',
+            borderRadius: 5,
+            padding: '3px 12px',
+            fontSize: 11,
+            color: '#777',
+            flex: 1,
+            maxWidth: 260,
+          }}
+        >
           app.chatiq.io/dashboard
         </div>
       </div>
-      {/* Preview content */}
-      <div style={{ padding: 24, display: 'grid', gridTemplateColumns: '200px 1fr', gap: 20, minHeight: 320 }}>
-        {/* Fake sidebar */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+
+      <div className="preview-body">
+        <div className="preview-sidebar">
           {['Dashboard', 'Automations', 'Activity', 'Settings'].map((item, i) => (
-            <div key={item} style={{
-              padding: '10px 14px', borderRadius: 8, fontSize: 13, fontWeight: 500,
-              background: i === 0 ? 'var(--accent-glow)' : 'transparent',
-              color: i === 0 ? 'var(--accent)' : 'var(--text-secondary)',
-              border: i === 0 ? '1px solid rgba(232,67,147,0.3)' : '1px solid transparent',
-            }}>{item}</div>
+            <div
+              key={item}
+              style={{
+                padding: '9px 12px',
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 500,
+                background: i === 0 ? '#fff' : 'transparent',
+                color: i === 0 ? '#000' : '#777',
+              }}
+            >
+              {item}
+            </div>
           ))}
         </div>
-        {/* Fake main */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="preview-stats">
             {[
               { label: 'Active Automations', value: '4' },
               { label: 'Triggers Today', value: '127' },
               { label: 'DMs Sent', value: '89' },
-            ].map(s => (
-              <div key={s.label} style={{
-                background: 'var(--bg-elevated)', borderRadius: 10,
-                padding: 16, border: '1px solid var(--border)',
-              }}>
-                <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--accent)' }}>{s.value}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{s.label}</div>
+            ].map((s) => (
+              <div
+                key={s.label}
+                style={{
+                  background: '#0a0a0a',
+                  borderRadius: 8,
+                  padding: 14,
+                  border: '1px solid #1a1a1a',
+                }}
+              >
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>{s.value}</div>
+                <div style={{ fontSize: 11, color: '#777', marginTop: 2 }}>{s.label}</div>
               </div>
             ))}
           </div>
-          <div style={{ background: 'var(--bg-elevated)', borderRadius: 10, padding: 16, border: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Recent Automations</div>
-            {['Summer Sale Post — "price" keyword', 'Course Launch — "link" keyword', 'Giveaway Post — "join" keyword'].map((a, i) => (
-              <div key={a} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '10px 0', borderBottom: i < 2 ? '1px solid var(--border)' : 'none',
-              }}>
-                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{a}</span>
-                <div style={{
-                  fontSize: 11, padding: '3px 10px', borderRadius: 20,
-                  background: 'rgba(34,211,165,0.1)', color: 'var(--success)',
-                  border: '1px solid rgba(34,211,165,0.2)',
-                }}>Active</div>
+          <div style={{ background: '#0a0a0a', borderRadius: 8, padding: 14, border: '1px solid #1a1a1a' }}>
+            <div
+              style={{
+                fontSize: 10,
+                color: '#777',
+                marginBottom: 10,
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: 1,
+              }}
+            >
+              Recent Automations
+            </div>
+            {['Summer Sale — "price"', 'Course Launch — "link"', 'Giveaway — "join"'].map((a, i) => (
+              <div
+                key={a}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '8px 0',
+                  borderBottom: i < 2 ? '1px solid #1a1a1a' : 'none',
+                  fontSize: 12,
+                }}
+              >
+                <span style={{ color: '#a0a0a0' }}>{a}</span>
+                <div
+                  style={{
+                    fontSize: 10,
+                    padding: '2px 8px',
+                    borderRadius: 20,
+                    border: '1px solid #2a2a2a',
+                    color: '#fff',
+                  }}
+                >
+                  Active
+                </div>
               </div>
             ))}
           </div>
@@ -240,41 +250,76 @@ function DashboardPreview() {
 
 function StepCard({ step, index }) {
   return (
-    <div style={{
-      background: 'var(--bg-surface)', border: '1px solid var(--border)',
-      borderRadius: 'var(--radius-lg)', padding: 32,
-      transition: 'border-color 0.2s, transform 0.2s',
-    }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--border-bright)'; e.currentTarget.style.transform = 'translateY(-4px)'; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.transform = 'none'; }}
+    <div
+      style={{
+        background: '#000',
+        border: '1px solid #1a1a1a',
+        borderRadius: 12,
+        padding: 28,
+        transition: 'border-color 0.2s, transform 0.2s',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = '#fff';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = '#1a1a1a';
+      }}
     >
-      <div style={{
-        width: 44, height: 44, borderRadius: 12, marginBottom: 20,
-        background: 'linear-gradient(135deg, var(--accent), var(--accent-2))',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 18, fontWeight: 800, fontFamily: 'var(--font-display)', color: '#fff',
-      }}>{index}</div>
-      <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 700, marginBottom: 10 }}>{step.title}</h3>
-      <p style={{ color: 'var(--text-secondary)', fontSize: 15, lineHeight: 1.6 }}>{step.desc}</p>
+      <div
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 8,
+          marginBottom: 18,
+          background: '#fff',
+          color: '#000',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 15,
+          fontWeight: 800,
+        }}
+      >
+        {index}
+      </div>
+      <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, color: '#fff', letterSpacing: '-0.01em' }}>{step.title}</h3>
+      <p style={{ color: '#a0a0a0', fontSize: 14, lineHeight: 1.55 }}>{step.desc}</p>
     </div>
   );
 }
 
 function FeatureCard({ feature }) {
   return (
-    <div style={{
-      background: 'var(--bg-surface)', border: '1px solid var(--border)',
-      borderRadius: 'var(--radius)', padding: 28,
-      display: 'flex', gap: 20, alignItems: 'flex-start',
-    }}>
-      <div style={{
-        width: 48, height: 48, borderRadius: 12, flexShrink: 0,
-        background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22,
-      }}>{feature.icon}</div>
+    <div
+      style={{
+        background: '#000',
+        border: '1px solid #1a1a1a',
+        borderRadius: 10,
+        padding: 24,
+        display: 'flex',
+        gap: 16,
+        alignItems: 'flex-start',
+      }}
+    >
+      <div
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 8,
+          flexShrink: 0,
+          background: '#0a0a0a',
+          border: '1px solid #1a1a1a',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#fff',
+        }}
+      >
+        {feature.icon}
+      </div>
       <div>
-        <h4 style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, marginBottom: 6 }}>{feature.title}</h4>
-        <p style={{ color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.6 }}>{feature.desc}</p>
+        <h4 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, color: '#fff' }}>{feature.title}</h4>
+        <p style={{ color: '#a0a0a0', fontSize: 13, lineHeight: 1.55 }}>{feature.desc}</p>
       </div>
     </div>
   );
@@ -282,8 +327,10 @@ function FeatureCard({ feature }) {
 
 function InstagramIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
-      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="2" width="20" height="20" rx="5" />
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+      <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
     </svg>
   );
 }
@@ -292,46 +339,133 @@ const STEPS = [
   { title: 'Connect Instagram', desc: 'Link your Instagram Business account via the official Meta OAuth flow in one click.' },
   { title: 'Choose a post', desc: 'Pick any post from your feed that you want to monitor for comments.' },
   { title: 'Set your keywords', desc: 'Define words like "price", "link", or "info" that trigger your automation.' },
-  { title: 'Automate replies & DMs', desc: 'ChatIQ instantly replies to comments and sends a DM to the commenter — hands free.' },
+  { title: 'Automate replies & DMs', desc: 'ChatIQ replies to comments and sends a DM to the commenter — hands free.' },
 ];
 
 const FEATURES = [
-  { icon: '🎯', title: 'Keyword Triggers', desc: 'Trigger automations only when specific keywords appear in comments.' },
-  { icon: '💬', title: 'Auto Comment Reply', desc: 'Reply to comments instantly with a custom message like "Check your DMs! 👀"' },
-  { icon: '📩', title: 'Auto DM Sender', desc: 'Send personalized DMs with links, info, or any message to engaged commenters.' },
-  { icon: '🔌', title: 'Official Meta API', desc: 'No scraping. Uses the official Instagram Graph API — safe and compliant.' },
-  { icon: '📊', title: 'Activity Logs', desc: 'See every trigger, reply, and DM in a real-time activity feed.' },
-  { icon: '⚡', title: 'Webhook-Powered', desc: 'Real-time processing via Meta webhooks — no polling, no delays.' },
+  { icon: '◆', title: 'Keyword Triggers', desc: 'Trigger automations only when specific keywords appear in comments.' },
+  { icon: '◈', title: 'Auto Comment Reply', desc: 'Reply to comments instantly with a custom message like "Check your DMs!"' },
+  { icon: '▲', title: 'Auto DM Sender', desc: 'Send personalized DMs with links, info, or any message to commenters.' },
+  { icon: '●', title: 'Official Meta API', desc: 'No scraping. Uses the official Instagram Graph API — safe and compliant.' },
+  { icon: '◉', title: 'Activity Logs', desc: 'See every trigger, reply, and DM in a real-time activity feed.' },
+  { icon: '▸', title: 'Webhook-Powered', desc: 'Real-time processing via Meta webhooks — no polling, no delays.' },
 ];
 
-const styles = {
-  navBtn: {
-    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-    color: 'var(--text-primary)', padding: '10px 20px',
-    borderRadius: 'var(--radius-sm)', fontSize: 14, fontWeight: 500,
-    cursor: 'pointer', transition: 'border-color 0.2s',
-  },
-  primaryBtn: {
-    background: 'linear-gradient(135deg, var(--accent), var(--accent-dim))',
-    border: 'none', color: '#fff',
-    padding: '14px 28px', borderRadius: 'var(--radius)',
-    fontSize: 15, fontWeight: 600, cursor: 'pointer',
-    display: 'inline-flex', alignItems: 'center', gap: 10,
-    boxShadow: '0 4px 24px var(--accent-glow)',
-    transition: 'transform 0.2s, box-shadow 0.2s',
-    fontFamily: 'var(--font-body)',
-  },
-  ghostBtn: {
-    background: 'transparent', border: '1px solid var(--border)',
-    color: 'var(--text-secondary)', padding: '14px 28px',
-    borderRadius: 'var(--radius)', fontSize: 15, fontWeight: 500,
-    cursor: 'pointer', display: 'inline-flex', alignItems: 'center',
-    transition: 'border-color 0.2s, color 0.2s',
-  },
-  badge: {
-    display: 'inline-flex', alignItems: 'center', gap: 8,
-    background: 'rgba(232,67,147,0.1)', border: '1px solid rgba(232,67,147,0.25)',
-    color: 'var(--text-secondary)', padding: '6px 16px',
-    borderRadius: 100, fontSize: 13, fontWeight: 500, marginBottom: 28,
-  },
-};
+const mediaCSS = `
+.landing-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 24px;
+  max-width: 1200px; margin: 0 auto;
+}
+.landing-nav-btn { padding: 8px 16px; min-height: auto; font-size: 13px; }
+
+.landing-hero {
+  max-width: 820px; margin: 0 auto;
+  padding: 48px 24px 40px;
+  text-align: center;
+}
+.landing-badge {
+  display: inline-block;
+  border: 1px solid #1a1a1a;
+  color: #a0a0a0;
+  padding: 5px 12px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 500;
+  margin-bottom: 24px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.landing-h1 {
+  font-size: clamp(40px, 9vw, 76px);
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  margin-bottom: 20px;
+  color: #fff;
+}
+.landing-sub {
+  font-size: clamp(15px, 2.4vw, 18px);
+  color: #a0a0a0;
+  max-width: 540px;
+  margin: 0 auto 32px;
+  line-height: 1.55;
+}
+.landing-cta {
+  display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+}
+.landing-primary { padding: 14px 24px; font-size: 15px; }
+.landing-fineprint {
+  margin-top: 20px; font-size: 12px; color: #555;
+}
+
+.landing-section {
+  max-width: 1100px; margin: 0 auto; padding: 56px 24px;
+}
+.landing-h2 {
+  font-size: clamp(28px, 5vw, 40px);
+  font-weight: 800;
+  text-align: center;
+  margin-bottom: 12px;
+  letter-spacing: -0.03em;
+  color: #fff;
+}
+.landing-section-sub {
+  text-align: center; color: #a0a0a0;
+  margin-bottom: 40px; font-size: 15px;
+  max-width: 480px; margin-left: auto; margin-right: auto;
+}
+.landing-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 640px) {
+  .landing-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 960px) {
+  .landing-grid { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .landing-grid.features { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+}
+
+.landing-cta-box {
+  max-width: 680px;
+  margin: 40px auto 80px;
+  padding: 48px 24px;
+  text-align: center;
+  background: #0a0a0a;
+  border-radius: 14px;
+  border: 1px solid #1a1a1a;
+}
+.landing-cta-box .landing-section-sub { margin-bottom: 24px; }
+
+.landing-footer {
+  border-top: 1px solid #141414;
+  padding: 24px;
+  display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 12px;
+  max-width: 1200px; margin: 0 auto;
+}
+
+/* Preview body layout */
+.preview-body {
+  padding: 20px;
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 16px;
+  min-height: 280px;
+}
+.preview-sidebar {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.preview-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+@media (max-width: 640px) {
+  .preview-body { grid-template-columns: 1fr; }
+  .preview-sidebar { display: none; }
+  .preview-stats { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+}
+`;
