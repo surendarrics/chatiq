@@ -47,6 +47,9 @@ router.post('/', authenticateToken, async (req, res) => {
     reply_text,
     dm_text,
     match_all_comments,
+    require_follow,
+    follow_gate_message,
+    follow_button_label,
   } = req.body;
 
   if (!instagram_account_id || !post_id) {
@@ -89,6 +92,9 @@ router.post('/', authenticateToken, async (req, res) => {
         reply_text: reply_text || null,
         dm_text: dm_text || null,
         match_all_comments: match_all_comments || false,
+        require_follow: !!require_follow,
+        follow_gate_message: follow_gate_message || null,
+        follow_button_label: follow_button_label || null,
         status: 'active',
         trigger_count: 0,
       })
@@ -108,7 +114,10 @@ router.post('/', authenticateToken, async (req, res) => {
  * Update an automation
  */
 router.put('/:id', authenticateToken, async (req, res) => {
-  const { name, keywords, reply_text, dm_text, status, match_all_comments } = req.body;
+  const {
+    name, keywords, reply_text, dm_text, status, match_all_comments,
+    require_follow, follow_gate_message, follow_button_label,
+  } = req.body;
 
   try {
     const updates = {};
@@ -118,6 +127,9 @@ router.put('/:id', authenticateToken, async (req, res) => {
     if (dm_text !== undefined) updates.dm_text = dm_text;
     if (status !== undefined) updates.status = status;
     if (match_all_comments !== undefined) updates.match_all_comments = match_all_comments;
+    if (require_follow !== undefined) updates.require_follow = !!require_follow;
+    if (follow_gate_message !== undefined) updates.follow_gate_message = follow_gate_message;
+    if (follow_button_label !== undefined) updates.follow_button_label = follow_button_label;
     updates.updated_at = new Date().toISOString();
 
     const { data, error } = await supabase

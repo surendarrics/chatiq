@@ -278,6 +278,70 @@ async function getInstagramBusinessAccount(pageId, pageAccessToken) {
   }
 }
 
+/**
+ * Get an IG messaging-conversation user's profile, including is_user_follow_business.
+ * Requires the instagram_business_manage_messages permission and is only valid
+ * for IGSIDs that have messaged the business (or for our followers).
+ *
+ * Returns null if the lookup fails entirely (we treat that as "unknown" and
+ * the caller should fall back to the follow-gate path so we don't accidentally
+ * unlock content for non-followers).
+ */
+async function getCommenterFollowStatus(commenterIgId, account) {
+  const apiBase = getApiBase(account);
+  const accessToken = getToken(account);
+  try {
+    const res = await axios.get(`${apiBase}/${commenterIgId}`, {
+      params: {
+        fields: 'name,username,profile_pic,is_user_follow_business,is_business_follow_user,follower_count',
+        access_token: accessToken,
+      },
+    });
+    return res.data;
+  } catch (err) {
+    const msg = err.response?.data?.error?.message || err.message;
+    logger.warn(`Follow-status lookup failed for ${commenterIgId}: ${msg}`);
+    return null;
+  }
+}
+
+/**
+ * Send a DM that contains a single quick-reply button (used for the follow gate).
+ * The payload comes back to the webhook as messaging[].message.quick_reply.payload
+ * when the user taps it.
+ */
+async function sendQuickReplyDM(account, recipientIgId, text, buttonLabel, payload) {
+  const apiBase = getApiBase(account);
+  const accessToken = getToken(account);
+  const params = { access_token: accessToken };
+  if (apiBase === FB_GRAPH_BASE) params.platform = 'instagram';
+
+  try {
+    const res = await axios.post(
+      `${apiBase}/me/messages`,
+      {
+        recipient: { id: recipientIgId },
+        message: {
+          text,
+          quick_replies: [
+            {
+              content_type: 'text',
+              title: buttonLabel,
+              payload,
+            },
+          ],
+        },
+      },
+      { params }
+    );
+    return res.data;
+  } catch (err) {
+    const msg = err.response?.data?.error?.message || err.message;
+    logger.error(`Quick-reply DM failed to ${recipientIgId}: ${msg}`);
+    return { error: msg };
+  }
+}
+
 async function getUserPages(userAccessToken) {
   try {
     const response = await axios.get(`${FB_GRAPH_BASE}/me/accounts`, {
@@ -301,6 +365,8 @@ module.exports = {
   getInstagramPosts,
   sendCommentReply,
   sendInstagramDM,
+  sendQuickReplyDM,
+  getCommenterFollowStatus,
   subscribePageToWebhook,
   getCommentDetails,
   validateToken,

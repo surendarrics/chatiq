@@ -24,6 +24,9 @@ export default function NewAutomationPage() {
     match_all_comments: false,
     reply_text: 'Thanks! Check your DMs 👀',
     dm_text: '',
+    require_follow: false,
+    follow_gate_message: '🔔 The Workflow is exclusively for Followers. Follow to gain access to the AI tool! 🔔',
+    follow_button_label: 'Following',
   });
 
   useEffect(() => {
@@ -455,6 +458,63 @@ function ActionsStep({ form, setForm }) {
           {form.dm_text.length}/1000 characters · Leave blank to skip DM · User must have DMs open
         </p>
       </div>
+
+      {/* Follow gate */}
+      <div style={{
+        background: '#0a0a0a', borderRadius: 12,
+        border: '1px solid #1a1a1a', padding: 20,
+      }}>
+        <label style={{
+          display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer',
+        }}>
+          <input
+            type="checkbox"
+            checked={!!form.require_follow}
+            onChange={e => setForm(f => ({ ...f, require_follow: e.target.checked }))}
+            style={{ width: 18, height: 18, marginTop: 2, accentColor: '#fff', flexShrink: 0 }}
+          />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 600, fontSize: 15, color: '#fff' }}>
+              Require follow before sending the link
+            </div>
+            <div style={{ fontSize: 12, color: '#a0a0a0', marginTop: 4, lineHeight: 1.5 }}>
+              If the commenter doesn't follow you yet, send a gate message with a "Following" button.
+              When they tap it, ChatIQ rechecks via the Instagram API and only sends the link if they're now a follower.
+            </div>
+          </div>
+        </label>
+
+        {form.require_follow && (
+          <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #1a1a1a', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label style={{ ...labelStyle, display: 'block', marginBottom: 6 }}>
+                Gate message (sent if not yet following)
+              </label>
+              <textarea
+                value={form.follow_gate_message}
+                onChange={set('follow_gate_message')}
+                rows={3}
+                style={{ resize: 'vertical' }}
+              />
+            </div>
+            <div>
+              <label style={{ ...labelStyle, display: 'block', marginBottom: 6 }}>
+                Button label
+              </label>
+              <input
+                type="text"
+                value={form.follow_button_label}
+                onChange={set('follow_button_label')}
+                placeholder="Following"
+                maxLength={20}
+              />
+              <p style={{ marginTop: 6, fontSize: 11, color: '#555' }}>
+                Max 20 characters (Instagram quick-reply limit).
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -472,6 +532,12 @@ function ReviewStep({ form, account }) {
       />
       <ReviewRow label="Comment Reply" value={form.reply_text || '(none)'} />
       <ReviewRow label="DM Message" value={form.dm_text || '(none)'} />
+      <ReviewRow
+        label="Follow Gate"
+        value={form.require_follow
+          ? `On — "${form.follow_button_label || 'Following'}" button`
+          : 'Off'}
+      />
 
       <div style={{
         marginTop: 8, padding: 16, borderRadius: 'var(--radius-sm)',

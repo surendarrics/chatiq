@@ -4,9 +4,14 @@ const crypto = require('crypto');
 const router = express.Router();
 
 const supabase = require('../utils/supabase');
+const { getCommenterFollowStatus, sendQuickReplyDM } = require('../services/instagramApi');
 
 const GRAPH_API = 'https://graph.facebook.com/v19.0';
 const IG_GRAPH_API = 'https://graph.instagram.com/v21.0';
+
+// Payload prefix for the follow-gate "Following" quick-reply button.
+// Format: CHATIQ_FOLLOW_CHECK:<automation_id>
+const FOLLOW_CHECK_PAYLOAD_PREFIX = 'CHATIQ_FOLLOW_CHECK:';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // GET /webhook/instagram — Meta verification handshake
@@ -143,7 +148,14 @@ router.post('/instagram', async (req, res) => {
     // ─── Handle Messaging (for both Instagram and Page) ─────
     for (const msg of entry.messaging || []) {
       console.log('📩 Messaging event received:', JSON.stringify(msg).substring(0, 200));
-      // Future: handle incoming DMs here
+      const qrPayload = msg.message?.quick_reply?.payload;
+      if (qrPayload && qrPayload.startsWith(FOLLOW_CHECK_PAYLOAD_PREFIX)) {
+        const automationId = qrPayload.slice(FOLLOW_CHECK_PAYLOAD_PREFIX.length);
+        const senderId = msg.sender?.id;
+        handleFollowCheck(entryId, automationId, senderId).catch(err =>
+          console.error('❌ handleFollowCheck error:', err.message, err.stack)
+        );
+      }
     }
   }
 });
@@ -214,7 +226,7 @@ async function handleComment(entryId, value, source) {
   // ── Check if post has an active automation ──
   const { data: automations } = await supabase
     .from('automations')
-    .select('id, keywords, reply_text, dm_text, match_all_comments')
+    .select('id, keywords, reply_text, dm_text, match_all_comments, require_follow, follow_gate_message, follow_button_label')
     .eq('post_id', postId)
     .eq('status', 'active');
 
@@ -276,33 +288,75 @@ async function handleComment(entryId, value, source) {
     }
 
     // ── Send DM (Private Reply to Comment) ──
+    let followGateSent = false;
+    let followGateUnlocked = false;
     if (auto.dm_text && commenterId) {
       // Guard: check if user confirmed message access is enabled
       if (!account.message_access_enabled) {
-        console.warn(`⚠️ Skipping DM — message access not enabled for @${account.username}. User must enable "Allow access to messages" in Instagram settings.`);
+        console.warn(`⚠️ Skipping DM — message access not enabled for @${account.username}.`);
         dmError = 'Message access not enabled';
       } else {
-        try {
-          // Small delay to avoid rate limit
-          await new Promise(r => setTimeout(r, 1000));
+        // Small delay to avoid rate limit
+        await new Promise(r => setTimeout(r, 1000));
 
-          // Private Reply to comment
-          const dmParams = { access_token: TOKEN };
-          // Only Facebook Graph API requires the platform=instagram parameter for sending IG messages
-          if (API_BASE === GRAPH_API) {
-            dmParams.platform = 'instagram';
+        // Decide: link DM directly, or follow-gate first?
+        let shouldSendLink = !auto.require_follow;
+        if (auto.require_follow) {
+          const profile = await getCommenterFollowStatus(commenterId, account);
+          if (profile?.is_user_follow_business === true) {
+            shouldSendLink = true;
+            followGateUnlocked = true;
+            console.log(`✅ ${commenterId} already follows @${account.username} — sending link directly`);
+          } else {
+            console.log(`🔒 ${commenterId} doesn't follow yet (or unknown) — sending follow gate`);
           }
+        }
 
-          const dmRes = await axios.post(
-            `${API_BASE}/me/messages`,
-            {
-              recipient: { comment_id: commentId },
-              message: { text: auto.dm_text },
-            },
-            { params: dmParams }
-          );
-          console.log(`✅ DM sent! Response:`, dmRes.data);
-          dmSent = true;
+        try {
+          if (shouldSendLink) {
+            const dmParams = { access_token: TOKEN };
+            if (API_BASE === GRAPH_API) dmParams.platform = 'instagram';
+            const dmRes = await axios.post(
+              `${API_BASE}/me/messages`,
+              {
+                recipient: { comment_id: commentId },
+                message: { text: auto.dm_text },
+              },
+              { params: dmParams }
+            );
+            console.log(`✅ Link DM sent! Response:`, dmRes.data);
+            dmSent = true;
+          } else {
+            // Follow gate: send the gate message with a "Following" quick reply button.
+            // Note: comment_id recipient is required for the FIRST DM (Private Reply rule)
+            // but quick replies require recipient.id, so we send via comment_id with no
+            // button first if needed. In practice the IG messaging API allows both via
+            // comment_id; if buttons get stripped, the user still sees the text and
+            // can click "Following" once they get any reply from us.
+            const dmParams = { access_token: TOKEN };
+            if (API_BASE === GRAPH_API) dmParams.platform = 'instagram';
+            const gateText = auto.follow_gate_message
+              || '🔔 The Workflow is exclusively for Followers. Follow to gain access! 🔔';
+            const gateRes = await axios.post(
+              `${API_BASE}/me/messages`,
+              {
+                recipient: { comment_id: commentId },
+                message: {
+                  text: gateText,
+                  quick_replies: [
+                    {
+                      content_type: 'text',
+                      title: auto.follow_button_label || 'Following',
+                      payload: `${FOLLOW_CHECK_PAYLOAD_PREFIX}${auto.id}`,
+                    },
+                  ],
+                },
+              },
+              { params: dmParams }
+            );
+            console.log(`✅ Follow-gate DM sent! Response:`, gateRes.data);
+            followGateSent = true;
+          }
         } catch (err) {
           dmError = err.response?.data?.error?.message || err.message;
           const fbErrorCode = err.response?.data?.error?.code;
@@ -319,19 +373,97 @@ async function handleComment(entryId, value, source) {
         comment_id: commentId,
         commenter_ig_id: commenterId,
         comment_text: commentText,
-        status: (replySent || dmSent) ? 'completed' : 'failed',
+        status: (replySent || dmSent || followGateSent) ? 'completed' : 'failed',
         reply_sent: replySent,
         dm_sent: dmSent,
+        follow_gate_sent: followGateSent,
+        follow_gate_unlocked: followGateUnlocked,
         reply_error: replyError ? String(replyError).substring(0, 250) : null,
         dm_error: dmError ? String(dmError).substring(0, 250) : null,
         processed_at: new Date().toISOString(),
       });
 
       await supabase.rpc('increment_trigger_count', { automation_id: auto.id });
-      console.log(`📊 Logged to DB — reply: ${replySent}, dm: ${dmSent}`);
+      console.log(`📊 Logged to DB — reply: ${replySent}, dm: ${dmSent}, gate: ${followGateSent}`);
     } catch (dbErr) {
       console.error('⚠️ DB log failed:', dbErr.message);
     }
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// FOLLOW GATE: handle the "Following" button click
+// Re-checks is_user_follow_business; if true, send the link DM. If still false,
+// re-send the gate message so user can try again.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async function handleFollowCheck(entryId, automationId, senderIgId) {
+  if (!automationId || !senderIgId) {
+    console.log('⏭️ handleFollowCheck: missing automation or sender id');
+    return;
+  }
+  console.log(`🔁 Follow-check postback: automation=${automationId}, sender=${senderIgId}`);
+
+  const { data: account } = await supabase
+    .from('instagram_accounts')
+    .select('id, ig_account_id, access_token, page_access_token, page_id, message_access_enabled, username')
+    .or(`ig_account_id.eq.${entryId},page_id.eq.${entryId}`)
+    .single();
+  if (!account) {
+    console.log(`⚠️ handleFollowCheck: no account for entry ${entryId}`);
+    return;
+  }
+
+  const { data: auto } = await supabase
+    .from('automations')
+    .select('id, dm_text, follow_gate_message, follow_button_label, require_follow')
+    .eq('id', automationId)
+    .single();
+  if (!auto) {
+    console.log(`⚠️ handleFollowCheck: automation ${automationId} not found`);
+    return;
+  }
+
+  const profile = await getCommenterFollowStatus(senderIgId, account);
+  const isFollowing = profile?.is_user_follow_business === true;
+  console.log(`   is_user_follow_business = ${profile?.is_user_follow_business}`);
+
+  if (isFollowing && auto.dm_text) {
+    // Send the actual link DM
+    const isIgLogin = !account.page_id || account.page_id === '';
+    const TOKEN = isIgLogin ? account.access_token : account.page_access_token;
+    const API_BASE = isIgLogin ? IG_GRAPH_API : GRAPH_API;
+    const dmParams = { access_token: TOKEN };
+    if (API_BASE === GRAPH_API) dmParams.platform = 'instagram';
+    try {
+      await axios.post(
+        `${API_BASE}/me/messages`,
+        { recipient: { id: senderIgId }, message: { text: auto.dm_text } },
+        { params: dmParams }
+      );
+      console.log(`✅ Unlocked: link DM sent to ${senderIgId}`);
+      // Mark the most recent log row for this commenter+automation as unlocked
+      await supabase
+        .from('automation_logs')
+        .update({ follow_gate_unlocked: true, dm_sent: true })
+        .eq('automation_id', auto.id)
+        .eq('commenter_ig_id', senderIgId)
+        .eq('follow_gate_sent', true)
+        .eq('follow_gate_unlocked', false);
+    } catch (err) {
+      console.error('❌ Unlock DM failed:', err.response?.data || err.message);
+    }
+  } else {
+    // Still not following — re-send the gate message
+    const gateText = auto.follow_gate_message
+      || '🔔 The Workflow is exclusively for Followers. Follow to gain access! 🔔';
+    await sendQuickReplyDM(
+      account,
+      senderIgId,
+      gateText,
+      auto.follow_button_label || 'Following',
+      `${FOLLOW_CHECK_PAYLOAD_PREFIX}${auto.id}`
+    );
+    console.log(`🔒 Re-sent follow gate to ${senderIgId}`);
   }
 }
 
