@@ -272,22 +272,21 @@ async function handleComment(entryId, value, source) {
     let dmError = null;
 
     // ── Reply to comment ──
-    // Meta error 100/subcode 33 ("Object ... does not exist") is usually a
-    // propagation delay — the webhook fires before the comment is queryable.
-    // Retry once after a delay, then fall back to the alternate Graph base
-    // since IG Login tokens sometimes need graph.facebook.com for /replies.
+    // Subcode 33 ("Object ... does not exist, ... or missing permissions")
+    // can be a propagation race (webhook before comment is indexed) OR a
+    // missing instagram_business_manage_comments scope on the token. We
+    // retry once on the propagation case; if it still fails the cause is
+    // almost certainly the scope — surface that hint in the log.
     if (auto.reply_text) {
-      const altBase = API_BASE === IG_GRAPH_API ? GRAPH_API : IG_GRAPH_API;
       const replyAttempts = [
-        { base: API_BASE, delay: 0, label: 'primary' },
-        { base: API_BASE, delay: 2500, label: 'primary+retry' },
-        { base: altBase, delay: 0, label: 'alternate-base' },
+        { delay: 0, label: 'primary' },
+        { delay: 2500, label: 'retry' },
       ];
       for (const attempt of replyAttempts) {
         if (attempt.delay) await new Promise(r => setTimeout(r, attempt.delay));
         try {
           const replyRes = await axios.post(
-            `${attempt.base}/${commentId}/replies`,
+            `${API_BASE}/${commentId}/replies`,
             null,
             { params: { message: auto.reply_text, access_token: TOKEN } }
           );
@@ -302,7 +301,11 @@ async function handleComment(entryId, value, source) {
         }
       }
       if (!replySent) {
-        console.error(`❌ All comment-reply attempts failed for ${commentId}`);
+        console.error(
+          `❌ Comment reply for ${commentId} failed. If subcode is 33 and "missing permissions" appears, ` +
+          `the token lacks instagram_business_manage_comments — submit that scope for App Review or add ` +
+          `the IG account as a Tester in App Roles.`
+        );
       }
     }
 
