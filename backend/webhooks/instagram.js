@@ -272,18 +272,37 @@ async function handleComment(entryId, value, source) {
     let dmError = null;
 
     // ── Reply to comment ──
+    // Meta error 100/subcode 33 ("Object ... does not exist") is usually a
+    // propagation delay — the webhook fires before the comment is queryable.
+    // Retry once after a delay, then fall back to the alternate Graph base
+    // since IG Login tokens sometimes need graph.facebook.com for /replies.
     if (auto.reply_text) {
-      try {
-        const replyRes = await axios.post(
-          `${API_BASE}/${commentId}/replies`,
-          null,
-          { params: { message: auto.reply_text, access_token: TOKEN } }
-        );
-        console.log(`✅ Comment reply sent! Response:`, replyRes.data);
-        replySent = true;
-      } catch (err) {
-        replyError = err.response?.data?.error?.message || err.message;
-        console.error(`❌ Comment reply FAILED:`, err.response?.data || err.message);
+      const altBase = API_BASE === IG_GRAPH_API ? GRAPH_API : IG_GRAPH_API;
+      const replyAttempts = [
+        { base: API_BASE, delay: 0, label: 'primary' },
+        { base: API_BASE, delay: 2500, label: 'primary+retry' },
+        { base: altBase, delay: 0, label: 'alternate-base' },
+      ];
+      for (const attempt of replyAttempts) {
+        if (attempt.delay) await new Promise(r => setTimeout(r, attempt.delay));
+        try {
+          const replyRes = await axios.post(
+            `${attempt.base}/${commentId}/replies`,
+            null,
+            { params: { message: auto.reply_text, access_token: TOKEN } }
+          );
+          console.log(`✅ Comment reply sent via ${attempt.label}! Response:`, replyRes.data);
+          replySent = true;
+          replyError = null;
+          break;
+        } catch (err) {
+          replyError = err.response?.data?.error?.message || err.message;
+          const sub = err.response?.data?.error?.error_subcode;
+          console.warn(`  ↳ reply attempt "${attempt.label}" failed [subcode ${sub}]: ${replyError}`);
+        }
+      }
+      if (!replySent) {
+        console.error(`❌ All comment-reply attempts failed for ${commentId}`);
       }
     }
 
