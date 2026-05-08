@@ -10,7 +10,7 @@ const supabase = require('../utils/supabase');
 const logger = require('../utils/logger');
 const {
   sleep, randInt, humanReplyDelay, pickVariant,
-  isRecipientOnCooldown, isAccountAtHourlyCap,
+  isAccountAtHourlyCap,
 } = require('../utils/humanize');
 
 const POLL_INTERVAL_MS = 2 * 60 * 1000;       // 2 minutes
@@ -90,15 +90,6 @@ async function processOne(row) {
   // ── Safety: kill items that have retried far too many times ──────
   if ((row.retry_count || 0) >= MAX_RETRIES) {
     await markFailed(row.id, `Exhausted ${MAX_RETRIES} retries`);
-    return;
-  }
-
-  // ── Re-check per-recipient cooldown ──────────────────────────────
-  // The recipient may have received a DM from this account since this
-  // row was queued. Don't double-message; drop instead.
-  if (await isRecipientOnCooldown(supabase, account.id, row.commenter_ig_id)) {
-    await markFailed(row.id, 'Recipient cooldown active at dequeue');
-    logger.info(`⏭️ Queue ${row.id}: recipient on cooldown, dropping`);
     return;
   }
 

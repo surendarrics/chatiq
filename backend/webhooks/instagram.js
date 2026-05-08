@@ -9,7 +9,6 @@ const {
   sleep,
   humanReplyDelay,
   pickVariant,
-  isRecipientOnCooldown,
   isAccountAtHourlyCap,
 } = require('../utils/humanize');
 
@@ -317,23 +316,17 @@ async function handleComment(entryId, value, source) {
     }
 
     // ── Send DM (Private Reply to Comment) ──
-    // Humanisation: random "noticing" delay, per-recipient cooldown, hourly
-    // throughput cap, and {a|b|c} variant picking on the configured text.
-    // Cooldown skips are permanent (recipient already got a DM). Hourly-cap
-    // hits get queued — services/dmQueue.js will retry them later so every
-    // commenter eventually receives the link.
+    // Humanisation: random "noticing" delay, hourly throughput cap with a
+    // queue, and {a|b|c} variant picking on the configured text. Every
+    // comment receives a DM — no per-recipient cooldown. The only skip is
+    // the message_access guard. Hourly-cap hits are queued (not dropped).
     let followGateSent = false;
     let followGateUnlocked = false;
-    let dmSkipped = false;
     let dmQueued = false;
     if (auto.dm_text && commenterId) {
       if (!account.message_access_enabled) {
         console.warn(`⚠️ Skipping DM — message access not enabled for @${account.username}.`);
         dmError = 'Message access not enabled';
-      } else if (await isRecipientOnCooldown(supabase, account.id, commenterId)) {
-        console.log(`⏭️ Skipping DM — ${commenterId} got a DM from this account within 24h (cooldown)`);
-        dmError = 'Recipient on cooldown';
-        dmSkipped = true;
       } else if (await isAccountAtHourlyCap(supabase, account.id)) {
         // Don't drop — queue for the worker to send later.
         const backoffMin = 5 + Math.floor(Math.random() * 10); // 5–15 min
