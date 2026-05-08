@@ -100,12 +100,15 @@ app.use((err, req, res, next) => {
 });
 
 // ── Start Server ─────────────────────────────────────────────────────────────
+const { startQueueWorker } = require('./services/dmQueue');
+
 app.listen(PORT, () => {
   logger.info(`🚀 ChatIQ Backend running on port ${PORT}`);
   logger.info(`📡 Environment: ${process.env.NODE_ENV || 'development'}`);
   logger.info(`📡 Frontend URL: ${process.env.FRONTEND_URL}`);
   logger.info(`📡 Allowed CORS origins: ${allowedOrigins.join(', ')}`);
   logger.info(`📡 Webhook endpoint: /webhook/instagram`);
+  startQueueWorker();
 });
 
 module.exports = app;

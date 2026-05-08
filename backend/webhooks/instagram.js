@@ -319,10 +319,13 @@ async function handleComment(entryId, value, source) {
     // ── Send DM (Private Reply to Comment) ──
     // Humanisation: random "noticing" delay, per-recipient cooldown, hourly
     // throughput cap, and {a|b|c} variant picking on the configured text.
-    // Each guard is non-fatal — failure to check just allows the send.
+    // Cooldown skips are permanent (recipient already got a DM). Hourly-cap
+    // hits get queued — services/dmQueue.js will retry them later so every
+    // commenter eventually receives the link.
     let followGateSent = false;
     let followGateUnlocked = false;
     let dmSkipped = false;
+    let dmQueued = false;
     if (auto.dm_text && commenterId) {
       if (!account.message_access_enabled) {
         console.warn(`⚠️ Skipping DM — message access not enabled for @${account.username}.`);
@@ -332,9 +335,12 @@ async function handleComment(entryId, value, source) {
         dmError = 'Recipient on cooldown';
         dmSkipped = true;
       } else if (await isAccountAtHourlyCap(supabase, account.id)) {
-        console.warn(`⏭️ Skipping DM — @${account.username} hit hourly cap. Looks bot-like to Meta otherwise.`);
-        dmError = 'Hourly cap reached';
-        dmSkipped = true;
+        // Don't drop — queue for the worker to send later.
+        const backoffMin = 5 + Math.floor(Math.random() * 10); // 5–15 min
+        console.log(`⏳ Hourly cap hit on @${account.username} — queuing DM for ~${backoffMin}min retry`);
+        dmError = 'Queued (hourly cap)';
+        dmQueued = true;
+        var queuedUntilIso = new Date(Date.now() + backoffMin * 60_000).toISOString();
       } else {
         // Random "noticing" delay — mimics a human seeing the notification.
         const delay = humanReplyDelay();
@@ -418,24 +424,33 @@ async function handleComment(entryId, value, source) {
     }
 
     // ── Log to DB ──
+    // status='queued' means the DM worker (services/dmQueue.js) will retry.
+    // 'completed' means at least one action landed. 'failed' is terminal.
+    let logStatus;
+    if (dmQueued) logStatus = 'queued';
+    else if (replySent || dmSent || followGateSent) logStatus = 'completed';
+    else logStatus = 'failed';
+
     try {
       await supabase.from('automation_logs').insert({
         automation_id: auto.id,
         comment_id: commentId,
         commenter_ig_id: commenterId,
         comment_text: commentText,
-        status: (replySent || dmSent || followGateSent) ? 'completed' : 'failed',
+        status: logStatus,
         reply_sent: replySent,
         dm_sent: dmSent,
         follow_gate_sent: followGateSent,
         follow_gate_unlocked: followGateUnlocked,
         reply_error: replyError ? String(replyError).substring(0, 250) : null,
         dm_error: dmError ? String(dmError).substring(0, 250) : null,
-        processed_at: new Date().toISOString(),
+        queued_until: dmQueued ? queuedUntilIso : null,
+        retry_count: 0,
+        processed_at: dmQueued ? null : new Date().toISOString(),
       });
 
       await supabase.rpc('increment_trigger_count', { automation_id: auto.id });
-      console.log(`📊 Logged to DB — reply: ${replySent}, dm: ${dmSent}, gate: ${followGateSent}`);
+      console.log(`📊 Logged to DB — reply: ${replySent}, dm: ${dmSent}, gate: ${followGateSent}, status: ${logStatus}`);
     } catch (dbErr) {
       console.error('⚠️ DB log failed:', dbErr.message);
     }
