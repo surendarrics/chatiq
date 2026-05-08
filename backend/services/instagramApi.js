@@ -342,6 +342,32 @@ async function sendQuickReplyDM(account, recipientIgId, text, buttonLabel, paylo
   }
 }
 
+/**
+ * Send a Messenger sender_action — 'mark_seen', 'typing_on', or 'typing_off'.
+ * These signals make conversations look human to Meta's anti-spam ML and to
+ * the recipient. Note: requires recipient.id (not comment_id), so it can only
+ * be applied AFTER the user has entered the messaging context (e.g. tapped a
+ * quick-reply). Failures are non-fatal — return null.
+ */
+async function sendSenderAction(account, recipientIgId, action) {
+  const apiBase = getApiBase(account);
+  const accessToken = getToken(account);
+  const params = { access_token: accessToken };
+  if (apiBase === FB_GRAPH_BASE) params.platform = 'instagram';
+  try {
+    const res = await axios.post(
+      `${apiBase}/me/messages`,
+      { recipient: { id: recipientIgId }, sender_action: action },
+      { params }
+    );
+    return res.data;
+  } catch (err) {
+    const msg = err.response?.data?.error?.message || err.message;
+    logger.warn(`sender_action ${action} failed for ${recipientIgId}: ${msg}`);
+    return null;
+  }
+}
+
 async function getUserPages(userAccessToken) {
   try {
     const response = await axios.get(`${FB_GRAPH_BASE}/me/accounts`, {
@@ -366,6 +392,7 @@ module.exports = {
   sendCommentReply,
   sendInstagramDM,
   sendQuickReplyDM,
+  sendSenderAction,
   getCommenterFollowStatus,
   subscribePageToWebhook,
   getCommentDetails,

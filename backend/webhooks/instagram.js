@@ -4,7 +4,14 @@ const crypto = require('crypto');
 const router = express.Router();
 
 const supabase = require('../utils/supabase');
-const { getCommenterFollowStatus, sendQuickReplyDM } = require('../services/instagramApi');
+const { getCommenterFollowStatus, sendQuickReplyDM, sendSenderAction } = require('../services/instagramApi');
+const {
+  sleep,
+  humanReplyDelay,
+  pickVariant,
+  isRecipientOnCooldown,
+  isAccountAtHourlyCap,
+} = require('../utils/humanize');
 
 const GRAPH_API = 'https://graph.facebook.com/v19.0';
 const IG_GRAPH_API = 'https://graph.instagram.com/v21.0';
@@ -310,16 +317,29 @@ async function handleComment(entryId, value, source) {
     }
 
     // ── Send DM (Private Reply to Comment) ──
+    // Humanisation: random "noticing" delay, per-recipient cooldown, hourly
+    // throughput cap, and {a|b|c} variant picking on the configured text.
+    // Each guard is non-fatal — failure to check just allows the send.
     let followGateSent = false;
     let followGateUnlocked = false;
+    let dmSkipped = false;
     if (auto.dm_text && commenterId) {
-      // Guard: check if user confirmed message access is enabled
       if (!account.message_access_enabled) {
         console.warn(`⚠️ Skipping DM — message access not enabled for @${account.username}.`);
         dmError = 'Message access not enabled';
+      } else if (await isRecipientOnCooldown(supabase, account.id, commenterId)) {
+        console.log(`⏭️ Skipping DM — ${commenterId} got a DM from this account within 24h (cooldown)`);
+        dmError = 'Recipient on cooldown';
+        dmSkipped = true;
+      } else if (await isAccountAtHourlyCap(supabase, account.id)) {
+        console.warn(`⏭️ Skipping DM — @${account.username} hit hourly cap. Looks bot-like to Meta otherwise.`);
+        dmError = 'Hourly cap reached';
+        dmSkipped = true;
       } else {
-        // Small delay to avoid rate limit
-        await new Promise(r => setTimeout(r, 1000));
+        // Random "noticing" delay — mimics a human seeing the notification.
+        const delay = humanReplyDelay();
+        console.log(`⏱️ Human delay: ${Math.round(delay.notice/1000)}s notice + ${Math.round(delay.typing/1000)}s typing`);
+        await sleep(delay.notice);
 
         // Decide: link DM directly, or follow-gate first?
         let shouldSendLink = !auto.require_follow;
@@ -334,15 +354,22 @@ async function handleComment(entryId, value, source) {
           }
         }
 
+        // "Typing" pause — adds to total elapsed before the message lands.
+        await sleep(delay.typing);
+
         try {
           if (shouldSendLink) {
             const dmParams = { access_token: TOKEN };
             if (API_BASE === GRAPH_API) dmParams.platform = 'instagram';
+            // Apply {a|b|c} variant picking so two recipients never get the
+            // same exact string. Users can write a single dm_text like
+            // "hey {there|friend}! {here's|sending} your link {🚀|💛|✨}".
+            const dmText = pickVariant(auto.dm_text);
             const dmRes = await axios.post(
               `${API_BASE}/me/messages`,
               {
                 recipient: { comment_id: commentId },
-                message: { text: auto.dm_text },
+                message: { text: dmText },
               },
               { params: dmParams }
             );
@@ -357,8 +384,10 @@ async function handleComment(entryId, value, source) {
             // can click "Following" once they get any reply from us.
             const dmParams = { access_token: TOKEN };
             if (API_BASE === GRAPH_API) dmParams.platform = 'instagram';
-            const gateText = auto.follow_gate_message
-              || '🔔 The Workflow is exclusively for Followers. Follow to gain access! 🔔';
+            const gateText = pickVariant(
+              auto.follow_gate_message
+              || '🔔 The Workflow is exclusively for Followers. Follow to gain access! 🔔'
+            );
             const gateRes = await axios.post(
               `${API_BASE}/me/messages`,
               {
@@ -450,16 +479,24 @@ async function handleFollowCheck(entryId, automationId, senderIgId) {
   console.log(`   is_user_follow_business = ${profile?.is_user_follow_business}`);
 
   if (isFollowing && auto.dm_text) {
-    // Send the actual link DM
+    // Send the actual link DM. Since the user is now in messaging context
+    // (they tapped a quick reply), we can apply the full human polish:
+    // mark_seen → typing_on → realistic delay → message with varied text.
     const isIgLogin = !account.page_id || account.page_id === '';
     const TOKEN = isIgLogin ? account.access_token : account.page_access_token;
     const API_BASE = isIgLogin ? IG_GRAPH_API : GRAPH_API;
     const dmParams = { access_token: TOKEN };
     if (API_BASE === GRAPH_API) dmParams.platform = 'instagram';
     try {
+      // Human polish: read receipt + typing indicator + variable delay
+      await sendSenderAction(account, senderIgId, 'mark_seen');
+      await sleep(800);
+      await sendSenderAction(account, senderIgId, 'typing_on');
+      const delay = humanReplyDelay([1500, 4000], [3000, 9000]);
+      await sleep(delay.notice + delay.typing);
       await axios.post(
         `${API_BASE}/me/messages`,
-        { recipient: { id: senderIgId }, message: { text: auto.dm_text } },
+        { recipient: { id: senderIgId }, message: { text: pickVariant(auto.dm_text) } },
         { params: dmParams }
       );
       console.log(`✅ Unlocked: link DM sent to ${senderIgId}`);
@@ -475,9 +512,17 @@ async function handleFollowCheck(entryId, automationId, senderIgId) {
       console.error('❌ Unlock DM failed:', err.response?.data || err.message);
     }
   } else {
-    // Still not following — re-send the gate message
-    const gateText = auto.follow_gate_message
-      || '🔔 The Workflow is exclusively for Followers. Follow to gain access! 🔔';
+    // Still not following — re-send the gate message with the same human
+    // signals (mark_seen + typing) as the unlock path.
+    await sendSenderAction(account, senderIgId, 'mark_seen');
+    await sleep(800);
+    await sendSenderAction(account, senderIgId, 'typing_on');
+    const delay = humanReplyDelay([1500, 4000], [2500, 7000]);
+    await sleep(delay.notice + delay.typing);
+    const gateText = pickVariant(
+      auto.follow_gate_message
+      || '🔔 The Workflow is exclusively for Followers. Follow to gain access! 🔔'
+    );
     await sendQuickReplyDM(
       account,
       senderIgId,
